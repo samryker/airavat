@@ -93,4 +93,21 @@ Auto-populates graphs of Hb, WBC, weight, immunity trend.
 │   └── flutter_twin_app/
 └── README.md
 
+🧠 Reference: Google’s Agent Architecture (Feb 2024)
+Key Principle from Google's Agent Whitepaper:
+
+“An agent should perceive, remember, reason, and act. It should use tools, APIs, memory, and planning to complete complex tasks over extended time.”
+
+🛠️ Let’s Architect Airavat’s Agent Layered System
+Layer	Name	Description
+🧠 1	Cognitive Core (Agent Memory)	Uses vector memory for test results, past decisions, symptom evolution
+📚 2	Knowledge Retrieval Tooling	Accesses cancer databases (PubMed, ClinicalTrials.gov), latest papers
+⚙️ 3	Tool Executor	Uses APIs: Firebase, GCP, drug matcher, PDF report generator, alert engine
+🧬 4	Planning + Reasoning Loop	Core agent loop that makes decisions, predicts prognosis, and plans next steps
+🧾 5	Goal Tracker & Reward Engine	Survival milestones, weight gain, biomarker improvements give reward score
+💬 6	Communication Layer	Sends doctor reports, notifies caregiver (you), updates dashboards
+💻 7	UI/API Interface	Flutter app + authenticated REST interface (for your father + doctor + you).
+
+
+
 
