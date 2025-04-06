@@ -98,16 +98,27 @@ Key Principle from Google's Agent Whitepaper:
 
 “An agent should perceive, remember, reason, and act. It should use tools, APIs, memory, and planning to complete complex tasks over extended time.”
 
-🛠️ Let’s Architect Airavat’s Agent Layered System
-Layer	Name	Description
-🧠 1	Cognitive Core (Agent Memory)	Uses vector memory for test results, past decisions, symptom evolution
-📚 2	Knowledge Retrieval Tooling	Accesses cancer databases (PubMed, ClinicalTrials.gov), latest papers
-⚙️ 3	Tool Executor	Uses APIs: Firebase, GCP, drug matcher, PDF report generator, alert engine
-🧬 4	Planning + Reasoning Loop	Core agent loop that makes decisions, predicts prognosis, and plans next steps
-🧾 5	Goal Tracker & Reward Engine	Survival milestones, weight gain, biomarker improvements give reward score
-💬 6	Communication Layer	Sends doctor reports, notifies caregiver (you), updates dashboards
-💻 7	UI/API Interface	Flutter app + authenticated REST interface (for your father + doctor + you).
+🧠 The Architecture: Digital Twin + LLM + RL Feedback Loop
+Module	Engine	Purpose
+🧬 Perception	Firebase inputs + PDF OCR	Biomarker reports, symptoms, treatment logs
+🧠 LLM Brain	OpenAI / Gemini / DeepSeek / Local LLM	Understands context, plans next action, explains reasoning
+🔁 Memory	Firestore timeline + vector DB	Past reports, outcomes, errors, thoughts
+🎯 Planner	LangGraph / ReAct agent	Multi-step plan executor with reasoning
+🧪 Tool Layer	Python AI Services + HTTP functions	simulate_therapy(), drug_match(), generate_alert()
+🎮 Reward System	RL custom loop	Success = +0.5, Miss = -0.4, tracked in memory
+📢 Interaction	Flutter UI + Doctor Summaries	Bi-weekly decision explanation & insight
 
 
+Backed by:
+🔹 Google's Agent Starter Pack
 
-
+🧠 ARCHITECTURE OVERVIEW (with Reasoning)
+Layer	Component	Tech Stack	Description
+👤 3D Digital Body	WebGL + Three.js	JavaScript	Real-time anatomical twin showing organs, cancer zones, blood flow, therapy markers
+🧠 LLM Brain	Gemini Pro / OpenAI GPT-4 / DeepSeek	LangGraph + RAG	Plans, reasons, simulates treatments using biomarkers & knowledge base
+🧬 Real Stats Ingestion	Firebase + JSON Uploader	Flutter (or Web UI)	Upload real biomarkers, genetic data, notes to sync twin state
+🔎 Medical RAG Base	PubMed, NCI, WHO Journals	FAISS / Chroma + Google LLM	Ingested PDFs + embeddings → answers grounded in research
+⚙️ Agent Loop	LangGraph	Gemini Agent + Tools	Reason, simulate, evaluate therapy efficacy, diet, drug synergy
+🧪 Drug Testing Module	Custom Python Microservice	Flask + Scikit + PyTorch	Run therapy prediction simulations + survival probability
+🌐 Access Portal	Web App + Flutter App	Firebase Hosting + GCP	Doctors, patient, caregivers interact with reports & plan
+🧠 Personalized Therapy Engine	RL + Bio-Agent loop	Reward-based adaptation of twin	Each survival checkpoint strengthens the agent’s feedback

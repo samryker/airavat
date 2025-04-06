@@ -1,0 +1,21 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // PATIENT PROFILE – Only that patient or admin can read/write
+    match /patients/{patientId} {
+      allow read, write: if request.auth != null && request.auth.uid == patientId;
+    }
+
+    // BIOMARKERS – Subcollection of reports per patient
+    match /biomarkers/{patientId}/reports/{reportId} {
+      allow read, write: if request.auth != null && request.auth.uid == patientId;
+    }
+
+    // ALERTS – Auto-created by backend, visible only to that patient
+    match /alerts/{patientId} {
+      allow read: if request.auth != null && request.auth.uid == patientId;
+      allow write: if request.auth != null && request.auth.uid == patientId || request.auth.token.admin == true;
+    }
+  }
+}
