@@ -98,16 +98,6 @@ Key Principle from Google's Agent Whitepaper:
 
 “An agent should perceive, remember, reason, and act. It should use tools, APIs, memory, and planning to complete complex tasks over extended time.”
 
-🧠 The Architecture: Digital Twin + LLM + RL Feedback Loop
-Module	Engine	Purpose
-🧬 Perception	Firebase inputs + PDF OCR	Biomarker reports, symptoms, treatment logs
-🧠 LLM Brain	OpenAI / Gemini / DeepSeek / Local LLM	Understands context, plans next action, explains reasoning
-🔁 Memory	Firestore timeline + vector DB	Past reports, outcomes, errors, thoughts
-🎯 Planner	LangGraph / ReAct agent	Multi-step plan executor with reasoning
-🧪 Tool Layer	Python AI Services + HTTP functions	simulate_therapy(), drug_match(), generate_alert()
-🎮 Reward System	RL custom loop	Success = +0.5, Miss = -0.4, tracked in memory
-📢 Interaction	Flutter UI + Doctor Summaries	Bi-weekly decision explanation & insight
-
 
 Backed by:
 🔹 Google's Agent Starter Pack
