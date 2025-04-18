@@ -102,13 +102,11 @@ Key Principle from Google's Agent Whitepaper:
 Backed by:
 🔹 Google's Agent Starter Pack
 
-🧠 ARCHITECTURE OVERVIEW (with Reasoning)
-Layer	Component	Tech Stack	Description
-👤 3D Digital Body	WebGL + Three.js	JavaScript	Real-time anatomical twin showing organs, cancer zones, blood flow, therapy markers
-🧠 LLM Brain	Gemini Pro / OpenAI GPT-4 / DeepSeek	LangGraph + RAG	Plans, reasons, simulates treatments using biomarkers & knowledge base
-🧬 Real Stats Ingestion	Firebase + JSON Uploader	Flutter (or Web UI)	Upload real biomarkers, genetic data, notes to sync twin state
-🔎 Medical RAG Base	PubMed, NCI, WHO Journals	FAISS / Chroma + Google LLM	Ingested PDFs + embeddings → answers grounded in research
-⚙️ Agent Loop	LangGraph	Gemini Agent + Tools	Reason, simulate, evaluate therapy efficacy, diet, drug synergy
-🧪 Drug Testing Module	Custom Python Microservice	Flask + Scikit + PyTorch	Run therapy prediction simulations + survival probability
-🌐 Access Portal	Web App + Flutter App	Firebase Hosting + GCP	Doctors, patient, caregivers interact with reports & plan
-🧠 Personalized Therapy Engine	RL + Bio-Agent loop	Reward-based adaptation of twin	Each survival checkpoint strengthens the agent’s feedback
+🖥️ Frontend UI	Flutter Web	Easy cross-platform access, camera/image capture
+📸 Image Upload & Mesh Creator	Flutter Web + Three.js/WebGL	Quickly create personalized 2D/3D mesh from user-uploaded images
+📚 Dynamic Biomarker Integration	Firebase	Real-time CBC & biomarkers syncing
+🧬 NGS Genetic Data Integration	Firebase JSON uploads	Immediate genetic updates on personalized model
+📈 Health & Risk Visualization	Three.js/WebGL Overlay	Highlight real-time health risks & organ statuses dynamically
+🧠 LLM Cognitive Engine	Gemini API + LangGraph	Intelligent recommendations & health planning
+⚙️ Simulation & Recommendations	Python Microservice (Flask, Scikit-learn, PyTorch)	Drug/diet synergy, predictive health outcomes
+☁️ Cloud Hosting & Scaling	Firebase Hosting, Google Cloud Run	Easy and rapid deployment, highly scalable
