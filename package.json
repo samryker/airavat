@@ -13,7 +13,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@google/model-viewer": "^4.1.0",
-    "three": "^0.175.0"
-  }
+      "three": "^0.172.0",
+      "@google/model-viewer": "^3.4.0",
+      "vite": "^5.2.0"
+    }
 }

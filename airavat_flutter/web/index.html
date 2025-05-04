@@ -1,23 +1,11 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
+  <!-- If serving from a sub-path, Flutter will replace this at build time -->
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
-  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge">
   <meta name="description" content="A new Flutter project.">
 
   <!-- iOS meta tags & icons -->
@@ -32,21 +20,46 @@
   <title>airavat_flutter</title>
   <link rel="manifest" href="manifest.json">
 
+  <!-- ─── Firebase JS SDK (v11.6.1) ───────────────────────────────────────── -->
+  <script type="module">
+    // Import the functions you need from the SDKs you need
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
+    // TODO: import other SDKs (auth, firestore) as needed:
+    import { getAuth } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // Your web app's Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyDP_fSOnjUA72A4ZtcVBnwyGnhUm33t8wU",
+      authDomain: "airavat-a3a10.firebaseapp.com",
+      projectId: "airavat-a3a10",
+      storageBucket: "airavat-a3a10.firebasestorage.app",
+      messagingSenderId: "124145466298",
+      appId: "1:124145466298:web:89b3750e1669cedb25bb83",
+      measurementId: "G-0T3KW893T9"
+    };
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const analytics = getAnalytics(app);
+    // const auth = getAuth(app);
+    // const db   = getFirestore(app);
+  </script>
+
   <script>
-    // The value below is injected by flutter build, do not touch.
+    // Flutter service worker version (injected by `flutter build`)
     var serviceWorkerVersion = null;
   </script>
-  <!-- This script adds the flutter initialization JS code -->
+  <!-- This script loads your Flutter web bundle -->
   <script src="flutter.js" defer></script>
 </head>
 <body>
   <script>
     window.addEventListener('load', function(ev) {
-      // Download main.dart.js
+      // Boot the Flutter engine & run your app
       _flutter.loader.loadEntrypoint({
-        serviceWorker: {
-          serviceWorkerVersion: serviceWorkerVersion,
-        },
+        serviceWorker: { serviceWorkerVersion: serviceWorkerVersion },
         onEntrypointLoaded: function(engineInitializer) {
           engineInitializer.initializeEngine().then(function(appRunner) {
             appRunner.runApp();
