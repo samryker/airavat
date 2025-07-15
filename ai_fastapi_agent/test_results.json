@@ -1,0 +1,79 @@
+[
+  {
+    "test": "Health Check",
+    "success": true,
+    "response": {
+      "status": "healthy",
+      "timestamp": "2024-01-01T00:00:00Z",
+      "services": {
+        "firestore": "available",
+        "mcp_agent": "unavailable",
+        "mcp_database": "unavailable"
+      },
+      "mcp_config": {
+        "available": false,
+        "db_type": "not_set"
+      }
+    },
+    "error": null,
+    "timestamp": "2025-07-16 02:34:55"
+  },
+  {
+    "test": "Root Endpoint",
+    "success": true,
+    "response": {
+      "message": "Welcome to the Airavat Medical Agent API. Use /agent/query, /agent/feedback, /agent/memory/{patient_id}, and /agent/update_treatment_plan endpoints."
+    },
+    "error": null,
+    "timestamp": "2025-07-16 02:34:55"
+  },
+  {
+    "test": "Chat Query",
+    "success": true,
+    "response": {
+      "request_id": "5fb6d6ed-db02-4634-a275-b968358b76b6",
+      "response_text": "A mild headache and fatigue can be caused by various factors, such as dehydration, stress, lack of sleep, or even a common cold. I recommend resting, drinking plenty of fluids, and trying over-the-counter pain relievers like ibuprofen or acetaminophen if needed. However, it's crucial to consult a qualified healthcare professional for accurate diagnosis and personalized advice, especially if your symptoms worsen or persist.\n\nPlanner Status: Planner not run: missing required input context (hemoglobin, risk_assessment string, or therapy).",
+      "suggestions": [
+        {
+          "suggestion_text": "A mild headache and fatigue can be caused by various factors, such as dehydration, stress, lack of sleep, or even a common cold. I recommend resting, drinking plenty of fluids, and trying over-the-counter pain relievers like ibuprofen or acetaminophen if needed. However, it's crucial to consult a qualified healthcare professional for accurate diagnosis and personalized advice, especially if your symptoms worsen or persist.",
+          "confidence_score": 0.8,
+          "supporting_evidence_ids": null
+        }
+      ]
+    },
+    "error": null,
+    "timestamp": "2025-07-16 02:34:58"
+  },
+  {
+    "test": "Memory Retrieval",
+    "success": true,
+    "response": {
+      "patient_id": "test_patient_001",
+      "memory_data": {},
+      "timestamp": "2024-01-01T00:00:00Z"
+    },
+    "error": null,
+    "timestamp": "2025-07-16 02:34:58"
+  },
+  {
+    "test": "Feedback Submission",
+    "success": true,
+    "response": {
+      "status": "error_handled",
+      "message": "Error processing feedback: object WriteResult can't be used in 'await' expression"
+    },
+    "error": null,
+    "timestamp": "2025-07-16 02:34:59"
+  },
+  {
+    "test": "Treatment Plan Update",
+    "success": true,
+    "response": {
+      "status": "error",
+      "message": "Failed to update treatment plan for patient test_patient_001",
+      "patient_id": "test_patient_001"
+    },
+    "error": null,
+    "timestamp": "2025-07-16 02:34:59"
+  }
+]

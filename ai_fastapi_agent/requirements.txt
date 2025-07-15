@@ -1,0 +1,18 @@
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+gunicorn>=21.2.0
+flask
+firebase-admin
+pandas
+numpy
+scikit-learn
+# openai # Commenting out if primary focus is Gemini, can be re-enabled if needed
+google-generativeai>=0.3.0
+langchain>=0.1.0
+langchain-google-genai>=0.0.5
+# MCP dependencies - commented out for now to fix deployment
+# langchain-google-alloydb-pg>=0.0.1
+# langchain-google-cloud-sql-pg>=0.0.1
+# langgraph>=0.0.20
+tqdm
+python-dotenv>=1.0.0 

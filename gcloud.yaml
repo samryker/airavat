@@ -1,0 +1,7 @@
+runtime: nodejs18
+region: us-central1
+entryPoint: onNewReport
+memory: 256MB
+timeout: 60s
+minInstances: 0
+maxInstances: 10 

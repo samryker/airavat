@@ -1,24 +1,33 @@
 import os
 import google.generativeai as genai
 from dotenv import load_dotenv
-from typing import Dict, Any, List
-from .data_models import PatientQuery
-import datetime # For formatting timestamps
+from typing import Dict, Any, List, Union
+from .data_models import PatientQuery, StructuredGeminiOutput, GeminiResponseFeatures
+import datetime
+import json
+import logging
+
+# Setup logging
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise ValueError("GEMINI_API_KEY not found in environment variables. Please set it in your .env file.")
-genai.configure(api_key=GEMINI_API_KEY)
+model = None
 
-MODEL_NAME = "gemini-pro"
-
-try:
-    model = genai.GenerativeModel(MODEL_NAME)
-except Exception as e:
-    print(f"Error initializing Gemini model ({MODEL_NAME}): {e}")
-    raise
+if GEMINI_API_KEY:
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        MODEL_NAME = "gemini-1.5-pro"
+        generation_config = genai.types.GenerationConfig(response_mime_type="application/json")
+        model = genai.GenerativeModel(MODEL_NAME, generation_config=generation_config)
+        logger.info(f"Gemini model ({MODEL_NAME}) initialized successfully with JSON mode.")
+    except Exception as e:
+        logger.exception(f"Error initializing Gemini model ({MODEL_NAME}): {e}")
+        model = None
+else:
+    logger.warning("GEMINI_API_KEY not found in environment variables. Gemini features will be disabled.")
 
 def format_firestore_timestamp(timestamp_obj) -> str:
     """Safely formats a Firestore Timestamp (or datetime object) to a string."""
@@ -110,62 +119,81 @@ def format_patient_record_for_prompt(patient_record: Dict[str, Any]) -> List[str
 
     return context_prompt_parts
 
-async def get_treatment_suggestion_from_gemini(patient_query: PatientQuery, firestore_context: Dict[str, Any] = None) -> str:
+async def get_treatment_suggestion_from_gemini(patient_query: PatientQuery, firestore_context: Dict[str, Any] = None) -> StructuredGeminiOutput:
+    default_error_features = GeminiResponseFeatures(category="error_response", urgency="unknown", actionable_steps_present=False)
     if not model:
-        return "Error: Gemini model not initialized."
+        logger.warning("Gemini model not available. Returning fallback response.")
+        return StructuredGeminiOutput(
+            text="I'm here to help with your health questions. Please note that AI features are currently limited. For medical advice, always consult with a qualified healthcare professional.",
+            features=GeminiResponseFeatures(
+                category="general_advice",
+                urgency="low",
+                keywords=["health", "consultation"],
+                actionable_steps_present=True
+            )
+        )
 
-    # Oncologist Persona added to the system prompt
+    # Construct JSON schema based on Pydantic model for the prompt
+    json_schema_prompt = f"""\
+Please respond ONLY with a JSON object matching the following Pydantic model schema:
+```json
+{{
+  \"text\": \"string (The main textual suggestion for the user)\",
+  \"features\": {{
+    \"category\": \"string (e.g., general_advice, specific_recommendation, further_questions, error_response)\",
+    \"urgency\": \"string (e.g., low, medium, high)\",
+    \"keywords\": [\"string (important keywords from suggestion)\"],
+    \"actionable_steps_present\": \"boolean (True if suggestion has clear actionable steps)\"
+  }}
+}}
+```
+Ensure the entire response is a single, valid JSON object and nothing else.
+"""
+
     prompt_parts = [
-        "You are Airavat, an AI medical assistant with a specialization as an oncologist. Your role is to provide preliminary insights and suggestions based on the information provided, with a focus on oncological conditions if relevant, but also considering general health. You are not a substitute for a human doctor. Always advise the user to consult with a qualified healthcare professional for diagnosis and treatment.",
-        "Please analyze the following patient information and provide a thoughtful, step-by-step preliminary suggestion. Consider potential next steps, relevant questions to ask the patient, or areas of focus for a human doctor, especially from an oncological perspective if applicable.",
-        f"\nPatient Query: {patient_query.query_text}"
+        "You are Airavat, an AI medical assistant specializing in oncology... Always advise user to consult with a qualified healthcare professional...",
+        f"Patient Query: {patient_query.query_text}",
     ]
 
     if patient_query.symptoms:
         prompt_parts.append(f"Reported Symptoms: {', '.join(patient_query.symptoms)}")
     if patient_query.medical_history:
-        prompt_parts.append(f"Relevant Medical History (as reported by user): {', '.join(patient_query.medical_history)}")
+        prompt_parts.append(f"Relevant Medical History: {', '.join(patient_query.medical_history)}")
     if patient_query.current_medications:
-        prompt_parts.append(f"Current Medications (as reported by user): {', '.join(patient_query.current_medications)}")
+        prompt_parts.append(f"Current Medications: {', '.join(patient_query.current_medications)}")
 
     prompt_parts.append("\n--- Patient Record Information (from Firebase) ---")
-    data_to_format = None
-    if firestore_context and firestore_context.get("data_from_firestore"):
-        data_to_format = firestore_context["data_from_firestore"].get("patient_record")
+    data_to_format = firestore_context.get("data_from_firestore", {}).get("patient_record") if firestore_context else None
     
     if data_to_format:
-        formatted_context_parts = format_patient_record_for_prompt(data_to_format)
-        prompt_parts.extend(formatted_context_parts)
+        prompt_parts.extend(format_patient_record_for_prompt(data_to_format))
     elif firestore_context and firestore_context.get("error"):
-        prompt_parts.append(f"  Note: There was an issue retrieving full patient records: {firestore_context.get('error')}")
-        prompt_parts.append("  No patient record data could be used.")
+        prompt_parts.append(f"  Note: Error retrieving records: {firestore_context.get('error')}")
     else:
-        prompt_parts.append("  No additional patient context was available from records for this query.")
+        prompt_parts.append("  No additional patient context available from records.")
     
     prompt_parts.append("\n--- End of Patient Record Information ---")
-    prompt_parts.append("\nBased on all the above information (user query and patient record), what are your preliminary suggestions and insights? Be cautious, empathetic, and maintain your oncologist persona where relevant. Provide clear, actionable steps if appropriate, and always emphasize consultation with a human doctor for diagnosis and treatment.")
+    prompt_parts.append("\nBased on all the above, provide your preliminary suggestions and insights.")
+    prompt_parts.append(json_schema_prompt)
     
     full_prompt = "\n".join(prompt_parts)
-
-    print("\n--- Sending Prompt to Gemini ---")
-    print(full_prompt)
-    print("--- End of Prompt ---\n")
+    logger.info(f"\n--- Sending Prompt to Gemini (expecting JSON) ---\n{full_prompt}\n--- End of Prompt ---\n")
 
     try:
         response = await model.generate_content_async(full_prompt)
-        if response and response.parts:
-            suggestion_text = ''.join(part.text for part in response.parts if hasattr(part, 'text'))
-            if not suggestion_text and response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
-                 suggestion_text = ''.join(part.text for part in response.candidates[0].content.parts if hasattr(part, 'text'))
-        elif response and hasattr(response, 'text'):
-            suggestion_text = response.text
-        else:
-            suggestion_text = "No suggestion was generated or the response format is unexpected."
-            print(f"Unexpected Gemini response structure: {response}")
-        return suggestion_text.strip()
+        raw_response_text = response.text
+        logger.info(f"Raw Gemini JSON response: {raw_response_text}")
+        
+        parsed_json = json.loads(raw_response_text)
+        structured_output = StructuredGeminiOutput(**parsed_json)
+        return structured_output
+    
+    except json.JSONDecodeError as e_json:
+        logger.error(f"JSONDecodeError parsing Gemini response: {e_json}. Raw response: '{raw_response_text[:500]}...'")
+        return StructuredGeminiOutput(text=f"Error: Could not parse AI model JSON response. Raw: {raw_response_text}", features=default_error_features)
     except Exception as e:
-        print(f"Error calling Gemini API: {e}")
-        return f"Error: Could not get suggestion from AI model due to: {str(e)}"
+        logger.exception(f"Error calling Gemini API or processing its response: {e}")
+        return StructuredGeminiOutput(text=f"Error: Could not get suggestion from AI model due to: {str(e)}", features=default_error_features)
 
 # Example usage (can be run directly for testing if needed)
 # if __name__ == '__main__':

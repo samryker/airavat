@@ -1,0 +1,38 @@
+# Dockerignore
+
+# Git files
+.git
+.gitignore
+
+# Python specific
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+*.env
+.env.*
+
+# IDE and OS specific
+.vscode/
+.idea/
+*.DS_Store
+
+# Test files (if you have a dedicated test directory you want to exclude from the image)
+# tests/
+
+# Notebooks (if not needed in production)
+notebooks/
+
+# Local Firebase service account keys (should use runtime env vars or secrets)
+firebase-service-account-key.json
+# Allow specific Firebase service account key file
+!airavat-a3a10-firebase-adminsdk-fbsvc-7b24d935c3.json
+*.json # Be careful with this if you have other necessary json files, 
+        # otherwise, list specific service account key files.
+
+# Other build artifacts or local files
+*.log
+.pytest_cache/ 
