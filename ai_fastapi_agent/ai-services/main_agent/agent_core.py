@@ -142,6 +142,311 @@ class MedicalAgent:
                 suggestions=[]
             )
 
+    async def _fallback_process_query(self, patient_query: PatientQuery) -> AgentResponse:
+        """Fallback method to process queries when MCP agent is not available"""
+        try:
+            # Get patient context from multiple sources
+            patient_context = {}
+            
+            # First try to get from Firestore
+            if self.firestore_service:
+                try:
+                    patient_context = await self.get_patient_context(patient_query.patient_id)
+                except Exception as e:
+                    print(f"Error getting patient context from Firestore: {e}")
+                    patient_context = {}
+            
+            # Then check if patient context is provided in additional_data
+            if patient_query.additional_data and patient_query.additional_data.get("patient_context"):
+                # Merge with Firestore data, with additional_data taking precedence
+                firestore_context = patient_context
+                additional_context = patient_query.additional_data["patient_context"]
+                
+                # Merge the contexts
+                if isinstance(firestore_context, dict) and isinstance(additional_context, dict):
+                    patient_context = {**firestore_context, **additional_context}
+                else:
+                    patient_context = additional_context
+                
+                print(f"Using patient context from additional_data: {patient_context}")
+            
+            # Use the actual Gemini service instead of hardcoded responses
+            firestore_context = {
+                "data_from_firestore": {
+                    "patient_record": patient_context
+                }
+            }
+            
+            # Call the real Gemini API
+            gemini_response = await get_treatment_suggestion_from_gemini(patient_query, firestore_context)
+            
+            # Create suggestions from Gemini response
+            suggestions = [
+                TreatmentSuggestion(
+                    suggestion_text=gemini_response.text,
+                    confidence_score=0.9,
+                    supporting_evidence_ids=None
+                )
+            ]
+            
+            # Add additional suggestions based on response features
+            if gemini_response.features and gemini_response.features.actionable_steps_present:
+                suggestions.append(
+                    TreatmentSuggestion(
+                        suggestion_text="Follow up with your healthcare provider for personalized advice",
+                        confidence_score=0.8
+                    )
+                )
+            
+            return AgentResponse(
+                request_id=patient_query.request_id,
+                response_text=gemini_response.text,
+                suggestions=suggestions
+            )
+            
+        except Exception as e:
+            print(f"Error in fallback query processing: {e}")
+            # Even in error case, try to get a basic response from Gemini
+            try:
+                basic_query = PatientQuery(
+                    patient_id=patient_query.patient_id,
+                    query_text=patient_query.query_text,
+                    request_id=patient_query.request_id
+                )
+                gemini_response = await get_treatment_suggestion_from_gemini(basic_query, None)
+                return AgentResponse(
+                    request_id=patient_query.request_id,
+                    response_text=gemini_response.text,
+                    suggestions=[
+                        TreatmentSuggestion(
+                            suggestion_text=gemini_response.text,
+                            confidence_score=0.7
+                        )
+                    ]
+                )
+            except Exception as gemini_error:
+                print(f"Error calling Gemini API: {gemini_error}")
+                return AgentResponse(
+                    request_id=patient_query.request_id,
+                    response_text="I apologize, but I'm having trouble processing your request right now. Please try again later or contact your healthcare provider directly.",
+                    suggestions=[]
+                )
+
+    def _generate_headache_response(self, patient_context: Dict[str, Any], query: str) -> str:
+        """Generate personalized headache response"""
+        response = "I understand you're experiencing a headache. "
+        
+        # Check for specific headache types
+        if "migraine" in query:
+            response += "Migraines can be debilitating and often require specific treatment approaches. "
+            response += "Common triggers include stress, certain foods, hormonal changes, and environmental factors. "
+        elif "tension" in query or "stress" in query:
+            response += "Tension headaches are often related to stress, poor posture, or muscle tension. "
+            response += "They typically respond well to relaxation techniques and stress management. "
+        elif "cluster" in query:
+            response += "Cluster headaches are severe and require immediate medical attention. "
+            response += "They often occur in cycles and can be extremely painful. "
+        else:
+            response += "Headaches can have various causes including stress, dehydration, lack of sleep, or underlying medical conditions. "
+        
+        # Add context-specific advice
+        if patient_context and not patient_context.get("error"):
+            if patient_context.get("bmiIndex") == "Underweight":
+                response += "Given your current weight status, ensure you're eating regular meals as low blood sugar can trigger headaches. "
+            if patient_context.get("habits"):
+                response += "Consider reviewing your daily habits and stress levels. "
+        
+        response += "If your headache is severe, sudden, or accompanied by other symptoms like vision changes, seek immediate medical attention."
+        
+        return response
+
+    def _generate_headache_suggestions(self, patient_context: Dict[str, Any]) -> List[TreatmentSuggestion]:
+        """Generate headache-specific suggestions"""
+        suggestions = [
+            TreatmentSuggestion(
+                suggestion_text="Try relaxation techniques like deep breathing or meditation",
+                confidence_score=0.8
+            ),
+            TreatmentSuggestion(
+                suggestion_text="Ensure adequate hydration and regular meals",
+                confidence_score=0.7
+            ),
+            TreatmentSuggestion(
+                suggestion_text="Consider over-the-counter pain relievers if appropriate",
+                confidence_score=0.6
+            )
+        ]
+        
+        if patient_context and not patient_context.get("error"):
+            if patient_context.get("bmiIndex") == "Underweight":
+                suggestions.append(TreatmentSuggestion(
+                    suggestion_text="Schedule a nutrition consultation to address dietary needs",
+                    confidence_score=0.7
+                ))
+        
+        return suggestions
+
+    def _generate_pain_response(self, patient_context: Dict[str, Any], query: str) -> str:
+        """Generate personalized pain response"""
+        response = "I understand you're experiencing pain. "
+        
+        if "chest" in query:
+            response += "Chest pain requires immediate medical attention as it could indicate a serious condition. "
+            response += "Please seek emergency care if you experience chest pain, especially if it's severe or accompanied by shortness of breath. "
+        elif "back" in query:
+            response += "Back pain is common and often related to posture, muscle strain, or underlying conditions. "
+            response += "Gentle stretching and proper ergonomics can help. "
+        elif "joint" in query:
+            response += "Joint pain can be caused by various factors including arthritis, injury, or overuse. "
+            response += "Rest, ice, and gentle movement may help. "
+        else:
+            response += "Pain can have many causes and it's important to identify the underlying issue. "
+        
+        response += "If pain is severe, persistent, or accompanied by other concerning symptoms, please consult a healthcare provider."
+        
+        return response
+
+    def _generate_pain_suggestions(self, patient_context: Dict[str, Any]) -> List[TreatmentSuggestion]:
+        """Generate pain-specific suggestions"""
+        return [
+            TreatmentSuggestion(
+                suggestion_text="Apply ice or heat therapy as appropriate",
+                confidence_score=0.7
+            ),
+            TreatmentSuggestion(
+                suggestion_text="Practice gentle stretching and movement",
+                confidence_score=0.6
+            ),
+            TreatmentSuggestion(
+                suggestion_text="Schedule a medical evaluation for persistent pain",
+                confidence_score=0.8
+            )
+        ]
+
+    def _generate_fever_response(self, patient_context: Dict[str, Any], query: str) -> str:
+        """Generate personalized fever response"""
+        response = "I understand you have a fever. "
+        
+        response += "Fever is often a sign that your body is fighting an infection. "
+        response += "Monitor your temperature and stay hydrated. "
+        response += "If your fever is high (above 103°F/39.4°C), persistent, or accompanied by other symptoms like severe headache or rash, seek medical attention immediately. "
+        
+        return response
+
+    def _generate_fever_suggestions(self, patient_context: Dict[str, Any]) -> List[TreatmentSuggestion]:
+        """Generate fever-specific suggestions"""
+        return [
+            TreatmentSuggestion(
+                suggestion_text="Monitor your temperature regularly",
+                confidence_score=0.9
+            ),
+            TreatmentSuggestion(
+                suggestion_text="Stay hydrated with water and clear fluids",
+                confidence_score=0.8
+            ),
+            TreatmentSuggestion(
+                suggestion_text="Get plenty of rest and avoid strenuous activity",
+                confidence_score=0.7
+            ),
+            TreatmentSuggestion(
+                suggestion_text="Seek medical care if fever persists or worsens",
+                confidence_score=0.8
+            )
+        ]
+
+    def _generate_fatigue_response(self, patient_context: Dict[str, Any], query: str) -> str:
+        """Generate personalized fatigue response"""
+        response = "I understand you're feeling tired or fatigued. "
+        
+        response += "Fatigue can be caused by various factors including lack of sleep, stress, poor nutrition, or underlying medical conditions. "
+        
+        if patient_context and not patient_context.get("error"):
+            if patient_context.get("bmiIndex") == "Underweight":
+                response += "Given your current weight status, fatigue might be related to nutritional deficiencies. "
+                response += "Consider consulting with a nutritionist to ensure adequate calorie and nutrient intake. "
+        
+        response += "If fatigue is persistent, severe, or accompanied by other symptoms, it's important to consult a healthcare provider."
+        
+        return response
+
+    def _generate_fatigue_suggestions(self, patient_context: Dict[str, Any]) -> List[TreatmentSuggestion]:
+        """Generate fatigue-specific suggestions"""
+        suggestions = [
+            TreatmentSuggestion(
+                suggestion_text="Ensure 7-9 hours of quality sleep per night",
+                confidence_score=0.8
+            ),
+            TreatmentSuggestion(
+                suggestion_text="Maintain a balanced diet with regular meals",
+                confidence_score=0.7
+            ),
+            TreatmentSuggestion(
+                suggestion_text="Practice stress management techniques",
+                confidence_score=0.6
+            )
+        ]
+        
+        if patient_context and not patient_context.get("error"):
+            if patient_context.get("bmiIndex") == "Underweight":
+                suggestions.append(TreatmentSuggestion(
+                    suggestion_text="Schedule a nutrition consultation",
+                    confidence_score=0.7
+                ))
+        
+        return suggestions
+
+    def _generate_dizziness_response(self, patient_context: Dict[str, Any], query: str) -> str:
+        """Generate personalized dizziness response"""
+        response = "I understand you're experiencing dizziness. "
+        
+        response += "Dizziness can be caused by various factors including inner ear problems, low blood pressure, dehydration, or medication side effects. "
+        response += "If dizziness is severe, accompanied by chest pain, or causes fainting, seek immediate medical attention. "
+        
+        return response
+
+    def _generate_dizziness_suggestions(self, patient_context: Dict[str, Any]) -> List[TreatmentSuggestion]:
+        """Generate dizziness-specific suggestions"""
+        return [
+            TreatmentSuggestion(
+                suggestion_text="Sit or lie down when feeling dizzy",
+                confidence_score=0.8
+            ),
+            TreatmentSuggestion(
+                suggestion_text="Stay hydrated and avoid sudden movements",
+                confidence_score=0.7
+            ),
+            TreatmentSuggestion(
+                suggestion_text="Schedule a medical evaluation for persistent dizziness",
+                confidence_score=0.8
+            )
+        ]
+
+    def _generate_nausea_response(self, patient_context: Dict[str, Any], query: str) -> str:
+        """Generate personalized nausea response"""
+        response = "I understand you're experiencing nausea. "
+        
+        response += "Nausea can be caused by various factors including gastrointestinal issues, medication side effects, or underlying medical conditions. "
+        response += "If nausea is severe, persistent, or accompanied by other symptoms like severe abdominal pain, seek medical attention. "
+        
+        return response
+
+    def _generate_nausea_suggestions(self, patient_context: Dict[str, Any]) -> List[TreatmentSuggestion]:
+        """Generate nausea-specific suggestions"""
+        return [
+            TreatmentSuggestion(
+                suggestion_text="Try small, bland meals and clear fluids",
+                confidence_score=0.7
+            ),
+            TreatmentSuggestion(
+                suggestion_text="Avoid strong odors and spicy foods",
+                confidence_score=0.6
+            ),
+            TreatmentSuggestion(
+                suggestion_text="Schedule a medical evaluation for persistent nausea",
+                confidence_score=0.8
+            )
+        ]
+
     async def _log_interaction(self, patient_query: PatientQuery):
         """Log patient interaction to Firestore for conversation history"""
         if not self.firestore_service:
@@ -159,9 +464,9 @@ class MedicalAgent:
                 'session_id': f"session_{datetime.datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
             }
             
-            # Store in interaction_logs collection
+            # Store in interaction_logs collection (remove await)
             doc_ref = self.firestore_service.db.collection('interaction_logs').document()
-            await doc_ref.set(interaction_data)
+            doc_ref.set(interaction_data)
             print(f"Logged interaction for patient {patient_query.patient_id}")
             
         except Exception as e:
@@ -181,9 +486,9 @@ class MedicalAgent:
                 'suggestions_count': len(response.suggestions) if response.suggestions else 0
             }
             
-            # Store in response_logs collection
+            # Store in response_logs collection (remove await)
             doc_ref = self.firestore_service.db.collection('response_logs').document()
-            await doc_ref.set(response_data)
+            doc_ref.set(response_data)
             print(f"Logged response for patient {patient_id}")
             
         except Exception as e:

@@ -16,21 +16,17 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application code into the working directory
-# This assumes your Dockerfile is in the 'ai-services' directory and your app code is in 'main_agent' subdir.
+# Copy the application code into the working directory
 COPY ./main_agent ./main_agent
-# If you have other necessary directories at the same level as main_agent (e.g., a shared 'common' lib), copy them too.
-# COPY ./common ./common 
+COPY ./mcp_config.py ./
+COPY ./gunicorn.conf.py ./
+COPY ./airavat-a3a10-firebase-adminsdk-fbsvc-7b24d935c3.json ./
+COPY .env ./
 
 # Expose the port Gunicorn will run on (Cloud Run will map this)
 # Cloud Run provides the PORT env var, Gunicorn will use it by default if not specified in CMD.
 EXPOSE 8080 
 
-# Command to run the application using Gunicorn
-# The path to the app is main_agent.main:app because WORKDIR is /app
-# We copied main_agent folder into /app, so it becomes /app/main_agent/main.py
-# Gunicorn needs number of workers. A common practice is (2 x $cores) + 1.
-# For Cloud Run, you can start with a reasonable number like 2-4 workers.
-# UvicornWorker is specified for FastAPI.
-# The PORT environment variable is automatically supplied by Cloud Run.
-CMD gunicorn -w 2 -k uvicorn.workers.UvicornWorker main_agent.main:app --bind 0.0.0.0:$PORT 
+# Command to run the application using Gunicorn with our configuration
+# The gunicorn.conf.py sets the proper PYTHONPATH and other settings
+CMD gunicorn -c gunicorn.conf.py main_agent.main:app --bind 0.0.0.0:$PORT 

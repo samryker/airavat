@@ -3,7 +3,7 @@ from .data_models import PatientQuery, AgentResponse, FeedbackDataModel, Treatme
 from .agent_core import MedicalAgent
 from .mcp_medical_agent import MCPMedicalAgent
 from .firestore_service import FirestoreService
-from ..mcp_config import get_mcp_db_engine, is_mcp_available
+from mcp_config import get_mcp_db_engine, is_mcp_available
 import uvicorn # For running the app directly if needed
 import firebase_admin
 from firebase_admin import credentials, firestore

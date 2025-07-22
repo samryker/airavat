@@ -30,9 +30,11 @@ gcloud services enable run.googleapis.com
 gcloud services enable alloydb.googleapis.com
 gcloud services enable sqladmin.googleapis.com
 
-# Build and push the Docker image
+# Build and push the Docker image from the ai-services directory
 echo "🏗️ Building and pushing Docker image..."
-gcloud builds submit --tag $IMAGE_NAME
+cd ai-services
+gcloud builds submit --tag $IMAGE_NAME .
+cd ..
 
 # Deploy to Cloud Run
 echo "🚀 Deploying to Cloud Run..."
@@ -70,7 +72,7 @@ gcloud run deploy $SERVICE_NAME \
     --platform managed \
     --region $REGION \
     --allow-unauthenticated \
-    --port 8000 \
+    --port 8080 \
     --memory 2Gi \
     --cpu 2 \
     --timeout 300 \
