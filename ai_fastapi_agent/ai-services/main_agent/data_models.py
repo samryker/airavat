@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 import uuid
 
+# --- Core Query and Response Models ---
 class PatientQuery(BaseModel):
     patient_id: str
     query_text: str
@@ -15,15 +16,13 @@ class TreatmentSuggestion(BaseModel):
     suggestion_text: str
     confidence_score: Optional[float] = None
     supporting_evidence_ids: Optional[List[str]] = None # IDs from MCP knowledge base
-    # Add more structured output fields as the agent develops
 
 class AgentResponse(BaseModel):
     request_id: str
     response_text: str
     suggestions: Optional[List[TreatmentSuggestion]] = None
-    # Add other relevant response fields 
 
-# --- New Models for Structured Gemini Output and Feedback ---
+# --- Structured Gemini Output and Feedback Models ---
 class GeminiResponseFeatures(BaseModel):
     category: str = Field(default="unknown", description="Category of the response, e.g., general_advice, specific_recommendation, further_questions, error_response")
     urgency: str = Field(default="medium", description="Perceived urgency, e.g., low, medium, high")
@@ -39,8 +38,6 @@ class FeedbackDataModel(BaseModel):
     patient_id: str
     outcome_works: bool
     feedback_text: Optional[str] = None
-    # Optional: patient_context_at_feedback (dict for current Hgb, risk, therapy when giving feedback)
-    # This would help determine the "next_state" more accurately.
 
 class TreatmentPlanUpdate(BaseModel):
     patient_id: str
@@ -49,7 +46,7 @@ class TreatmentPlanUpdate(BaseModel):
     priority: Optional[str] = Field(default="medium", description="Priority level: low, medium, high")
     notes: Optional[str] = Field(default=None, description="Additional notes about the treatment plan")
 
-# --- New Models for Digital Twin Functionality ---
+# --- Patient Context and Digital Twin Models ---
 class PatientContext(BaseModel):
     patient_id: str
     profile: Optional[Dict[str, Any]] = None
@@ -66,4 +63,56 @@ class ConversationHistory(BaseModel):
 
 class BiomarkerData(BaseModel):
     patient_id: str
-    biomarkers: Optional[Dict[str, Any]] = None 
+    biomarkers: Optional[Dict[str, Any]] = None
+
+# --- Genetic Analysis Models ---
+class GeneticReportUpload(BaseModel):
+    user_id: str
+    file_content: str  # Base64 encoded file content
+    filename: str
+    report_type: Optional[str] = "unknown"
+
+class GeneticReportResponse(BaseModel):
+    success: bool
+    report_id: Optional[str] = None
+    analysis_data: Optional[Dict[str, Any]] = None
+    status: Optional[str] = None
+    message: Optional[str] = None
+    error: Optional[str] = None
+
+# --- Patient Context Sync Models ---
+class PatientContextSync(BaseModel):
+    patient_id: str
+    profile_data: Dict[str, Any]
+    treatment_plans: List[Dict[str, Any]]
+    biomarkers: Optional[Dict[str, Any]] = None
+    genetic_data: Optional[Dict[str, Any]] = None
+
+# --- Questionnaire and RL Training Models ---
+class QuestionnaireResponse(BaseModel):
+    patient_id: str
+    request_id: str
+    questions: List[Dict[str, Any]]
+    answers: List[Dict[str, Any]]
+    outcome_works: bool
+    feedback_text: Optional[str] = None
+
+# --- Notification and Reminder Models ---
+class NotificationRequest(BaseModel):
+    patient_id: str
+    notification_type: str  # "reminder", "email", "emergency"
+    title: str
+    message: str
+    scheduled_time: Optional[str] = None
+    recipient_email: Optional[str] = None
+
+# --- 3D Twin Models ---
+class TwinCreationRequest(BaseModel):
+    patient_id: str
+    twin_config: Optional[Dict[str, Any]] = None
+
+class TwinCreationResponse(BaseModel):
+    success: bool
+    twin_id: Optional[str] = None
+    message: Optional[str] = None
+    error: Optional[str] = None 

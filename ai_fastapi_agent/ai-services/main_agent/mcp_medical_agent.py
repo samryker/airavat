@@ -8,7 +8,11 @@ import asyncio
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 import json
-import logging
+import google.generativeai as genai
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Try to import MCP dependencies, but handle gracefully if not available
 try:
@@ -40,29 +44,23 @@ except ImportError:
 
 from .data_models import PatientQuery, AgentResponse, TreatmentSuggestion
 from .firestore_service import FirestoreService
-import google.generativeai as genai
-from dotenv import load_dotenv
-
-# Setup logging
-logger = logging.getLogger(__name__)
-load_dotenv()
 
 # Initialize Gemini
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+gemini_model = None
+
 if GEMINI_API_KEY:
     try:
         genai.configure(api_key=GEMINI_API_KEY)
-        MODEL_NAME = "gemini-1.5-pro"
-        model = genai.GenerativeModel(MODEL_NAME)
-        logger.info(f"Gemini model ({MODEL_NAME}) initialized successfully.")
+        gemini_model = genai.GenerativeModel('gemini-1.5-pro')
+        print("✅ Gemini model initialized successfully")
     except Exception as e:
-        logger.exception(f"Error initializing Gemini model ({MODEL_NAME}): {e}")
-        model = None
+        print(f"❌ Error initializing Gemini: {e}")
+        gemini_model = None
 else:
-    logger.warning("GEMINI_API_KEY not found in environment variables. Gemini features will be disabled.")
-    model = None
+    print("⚠️ GEMINI_API_KEY not found. Using fallback responses.")
 
-# Simple message classes for compatibility
+# Message classes for compatibility
 class HumanMessage:
     def __init__(self, content):
         self.content = content
@@ -75,13 +73,28 @@ class ChatPromptTemplate:
     def __init__(self, messages):
         self.messages = messages
     
-    def format_messages(self, **kwargs):
-        # For now, return a simple human message
-        return [HumanMessage("Based on the patient's query, I recommend consulting with a healthcare provider for personalized medical advice.")]
-    
     @classmethod
     def from_messages(cls, messages):
         return cls(messages)
+    
+    def format_messages(self, **kwargs):
+        # Extract the system message and user message
+        system_msg = ""
+        user_msg = ""
+        
+        for role, content in self.messages:
+            if role == "system":
+                system_msg = content
+            elif role == "human":
+                user_msg = content
+        
+        # Format the prompt for Gemini
+        if system_msg and user_msg:
+            return f"{system_msg}\n\n{user_msg}"
+        elif user_msg:
+            return user_msg
+        else:
+            return system_msg
 
 class MessagesPlaceholder:
     def __init__(self, variable_name):
@@ -91,46 +104,45 @@ def tool(func):
     """Simple decorator to mark functions as tools"""
     return func
 
-class GeminiChatLLM:
-    def __init__(self, model_name="gemini-1.5-pro", temperature=0.1, max_tokens=2048):
+class RealGeminiLLM:
+    def __init__(self, model, temperature, max_tokens, convert_system_message_to_human):
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self.model_name = model_name
+        self.convert_system_message_to_human = convert_system_message_to_human
     
-    async def ainvoke(self, messages):
-        """Async invoke method for Gemini API"""
-        if not self.model:
-            return AIMessage("I'm here to help with your health questions. For medical advice, please consult with a qualified healthcare professional.")
-        
+    async def ainvoke(self, prompt_or_messages):
+        """Async invoke method that actually calls Gemini API"""
         try:
-            # Convert messages to a single prompt
-            if isinstance(messages, str):
-                prompt = messages
-            elif isinstance(messages, list):
-                # Extract content from message objects
-                prompt_parts = []
-                for msg in messages:
-                    if hasattr(msg, 'content'):
-                        prompt_parts.append(msg.content)
-                    elif isinstance(msg, str):
-                        prompt_parts.append(msg)
-                prompt = "\n".join(prompt_parts)
+            if gemini_model is None:
+                return AIMessage("I'm experiencing technical difficulties. Please try again later or contact your healthcare provider for immediate concerns.")
+            
+            # Handle both string prompts and message lists
+            if isinstance(prompt_or_messages, str):
+                prompt = prompt_or_messages
+            elif isinstance(prompt_or_messages, dict):
+                # Extract messages from the dict
+                messages = prompt_or_messages.get("messages", [])
+                if messages:
+                    # Combine all messages into a single prompt
+                    prompt_parts = []
+                    for msg in messages:
+                        if hasattr(msg, 'content'):
+                            prompt_parts.append(msg.content)
+                    prompt = "\n\n".join(prompt_parts)
+                else:
+                    # Handle other dict formats
+                    prompt = str(prompt_or_messages)
             else:
-                prompt = str(messages)
+                prompt = str(prompt_or_messages)
             
             # Call Gemini API
-            response = await self.model.generate_content_async(prompt)
+            response = await gemini_model.generate_content_async(prompt)
             return AIMessage(response.text)
             
         except Exception as e:
-            logger.error(f"Error calling Gemini API: {e}")
-            return AIMessage("I'm here to help with your health questions. For medical advice, please consult with a qualified healthcare professional.")
-    
-    def invoke(self, messages):
-        """Sync invoke method for compatibility"""
-        import asyncio
-        return asyncio.run(self.ainvoke(messages))
+            print(f"Error calling Gemini API: {e}")
+            return AIMessage("I'm having trouble processing your request right now. Please try again or contact your healthcare provider for immediate concerns.")
 
 class MCPMedicalAgent:
     """
@@ -151,11 +163,12 @@ class MCPMedicalAgent:
             self.memory_saver = MemorySaver()
             self.agent_graph = self._create_agent_graph()
         
-        # Use proper Gemini integration
-        self.llm = GeminiChatLLM(
-            model_name="gemini-1.5-pro",
+        # Use real Gemini LLM instead of hardcoded fallback
+        self.llm = RealGeminiLLM(
+            model="gemini-1.5-pro",
             temperature=0.1,
-            max_tokens=2048
+            max_tokens=2048,
+            convert_system_message_to_human=True
         )
         
     def _create_agent_graph(self) -> Optional[Any]:
@@ -525,58 +538,200 @@ Remember: You are this patient's lifelong medical companion. You know their comp
     async def _fallback_process_query(self, patient_query: PatientQuery) -> AgentResponse:
         """Fallback implementation when MCP agent graph is not available"""
         try:
-            # Simple direct response using the LLM
-            prompt = f"""You are Airavat, a medical AI assistant. A patient asks: "{patient_query.query_text}"
+            # Get patient context for personalized response
+            patient_context = {}
+            if self.firestore_service:
+                try:
+                    patient_context = await self.firestore_service.get_complete_patient_context(patient_query.patient_id)
+                except Exception as e:
+                    print(f"Error getting patient context: {e}")
+            
+            # Create a comprehensive prompt with patient context
+            context_summary = self._create_context_summary(
+                patient_context.get("profile", {}),
+                patient_context.get("treatment_plans", []),
+                patient_context.get("biomarkers", {}),
+                patient_context.get("conversation_history", [])
+            )
+            
+            prompt = f"""You are Airavat, a medical AI assistant and digital twin. You have access to the patient's medical context and should provide personalized, caring responses.
 
-Please provide a helpful, caring response. Remember to:
-1. Be personal and caring
-2. Provide evidence-based information
-3. Always recommend consulting healthcare professionals for serious concerns
-4. Be conversational yet professional
+PATIENT CONTEXT:
+{context_summary}
+
+PATIENT QUERY: "{patient_query.query_text}"
+
+Please provide a helpful, personalized response that:
+1. Addresses the specific query with empathy and care
+2. References the patient's medical context when relevant
+3. Provides evidence-based information
+4. Always recommends consulting healthcare professionals for serious concerns
+5. Is conversational yet professional
+6. Offers actionable next steps when appropriate
 
 Response:"""
             
             result = await self.llm.ainvoke(prompt)
             ai_response = result.content
             
+            # Generate dynamic suggestions based on the response
+            suggestions = await self._generate_dynamic_suggestions(ai_response, patient_query.query_text, patient_context)
+            
             return AgentResponse(
                 request_id=patient_query.request_id,
                 response_text=ai_response,
-                suggestions=[
-                    TreatmentSuggestion(
-                        suggestion_text=ai_response,
-                        confidence_score=0.8,
-                        supporting_evidence_ids=None
-                    )
-                ]
+                suggestions=suggestions
             )
         except Exception as e:
             print(f"Error in fallback process_query: {e}")
             return AgentResponse(
                 request_id=patient_query.request_id,
-                response_text="I'm here to help with your health questions. For medical advice, please consult with a qualified healthcare professional.",
+                response_text="I'm experiencing technical difficulties right now. Please try again in a few moments or contact your healthcare provider for immediate concerns.",
                 suggestions=[
                     TreatmentSuggestion(
-                        suggestion_text="Consult with a healthcare professional for personalized medical advice.",
+                        suggestion_text="Try again in a few moments",
+                        confidence_score=0.7,
+                        supporting_evidence_ids=None
+                    ),
+                    TreatmentSuggestion(
+                        suggestion_text="Contact your healthcare provider for immediate concerns",
                         confidence_score=0.9,
                         supporting_evidence_ids=None
                     )
                 ]
             )
     
+    async def _generate_dynamic_suggestions(self, response_text: str, original_query: str, patient_context: Dict[str, Any]) -> List[TreatmentSuggestion]:
+        """Generate dynamic suggestions based on the response and patient context"""
+        try:
+            if gemini_model is None:
+                return self._get_fallback_suggestions()
+            
+            suggestion_prompt = f"""
+            Based on this medical response and the patient's query, generate 3-5 actionable suggestions.
+            
+            Patient Query: "{original_query}"
+            AI Response: "{response_text}"
+            
+            Generate suggestions that are:
+            1. Relevant to the specific query and response
+            2. Actionable and practical
+            3. Appropriate for the patient's context
+            4. Include confidence scores (0.0-1.0)
+            
+            Return as JSON array with format:
+            [
+                {{
+                    "suggestion_text": "specific actionable suggestion",
+                    "confidence_score": 0.8
+                }}
+            ]
+            """
+            
+            response = await gemini_model.generate_content_async(suggestion_prompt)
+            
+            try:
+                suggestions_data = json.loads(response.text)
+                if isinstance(suggestions_data, list):
+                    return [
+                        TreatmentSuggestion(
+                            suggestion_text=item.get("suggestion_text", ""),
+                            confidence_score=item.get("confidence_score", 0.7)
+                        )
+                        for item in suggestions_data
+                        if item.get("suggestion_text")
+                    ]
+            except (json.JSONDecodeError, KeyError) as e:
+                print(f"Error parsing suggestions: {e}")
+            
+            return self._get_fallback_suggestions()
+            
+        except Exception as e:
+            print(f"Error generating dynamic suggestions: {e}")
+            return self._get_fallback_suggestions()
+    
+    def _get_fallback_suggestions(self) -> List[TreatmentSuggestion]:
+        """Get basic fallback suggestions when dynamic generation fails"""
+        return [
+            TreatmentSuggestion(
+                suggestion_text="Schedule a consultation with your healthcare provider",
+                confidence_score=0.8,
+                supporting_evidence_ids=None
+            ),
+            TreatmentSuggestion(
+                suggestion_text="Monitor your symptoms and keep a detailed log",
+                confidence_score=0.7,
+                supporting_evidence_ids=None
+            ),
+            TreatmentSuggestion(
+                suggestion_text="Follow up with your doctor for personalized advice",
+                confidence_score=0.8,
+                supporting_evidence_ids=None
+            )
+        ]
+    
     async def get_patient_memory(self, patient_id: str) -> Dict[str, Any]:
-        """Retrieve patient's complete memory and context"""
-        if self.db_engine:
-            async with self.db_engine.connect() as conn:
-                result = await conn.execute(
-                    "SELECT context_data FROM patient_context WHERE patient_id = %s ORDER BY updated_at DESC LIMIT 1",
-                    (patient_id,)
-                )
-                row = await result.fetchone()
-                if row:
-                    return json.loads(row[0])
-        
-        return {}
+        """
+        Get patient's memory and context from MCP system
+        """
+        try:
+            if self.agent_graph and self.memory_saver:
+                # Get memory from LangGraph checkpointer
+                memory = await self.memory_saver.get_memory(patient_id)
+                return {
+                    'patient_id': patient_id,
+                    'memory': memory,
+                    'has_memory': bool(memory)
+                }
+            else:
+                # Fallback to Firestore
+                if self.firestore_service:
+                    context = await self.firestore_service.get_complete_patient_context(patient_id)
+                    return {
+                        'patient_id': patient_id,
+                        'context': context,
+                        'has_memory': bool(context)
+                    }
+                return {
+                    'patient_id': patient_id,
+                    'memory': {},
+                    'has_memory': False
+                }
+        except Exception as e:
+            print(f"Error getting patient memory: {e}")
+            return {
+                'patient_id': patient_id,
+                'memory': {},
+                'has_memory': False,
+                'error': str(e)
+            }
+
+    async def get_patient_context(self, patient_id: str) -> Dict[str, Any]:
+        """
+        Get patient's complete context for LLM integration
+        """
+        try:
+            if self.firestore_service:
+                complete_context = await self.firestore_service.get_complete_patient_context(patient_id)
+                return {
+                    'patient_id': patient_id,
+                    'context': complete_context,
+                    'has_context': bool(complete_context)
+                }
+            else:
+                return {
+                    'patient_id': patient_id,
+                    'context': {},
+                    'has_context': False
+                }
+        except Exception as e:
+            print(f"Error getting patient context: {e}")
+            return {
+                'patient_id': patient_id,
+                'context': {},
+                'has_context': False,
+                'error': str(e)
+            }
     
     async def update_treatment_plan(self, patient_id: str, treatment_plan: Dict[str, Any]) -> bool:
         """Update patient's treatment plan in memory"""

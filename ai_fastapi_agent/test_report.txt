@@ -1,0 +1,7 @@
+Patient: John Doe
+Age: 45
+Blood Pressure: 140/90 mmHg
+Cholesterol: 220 mg/dL
+Glucose: 110 mg/dL
+Diagnosis: Hypertension
+Recommendation: Monitor blood pressure daily

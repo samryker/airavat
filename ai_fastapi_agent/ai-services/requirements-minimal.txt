@@ -1,0 +1,23 @@
+# Minimal requirements for Airavat Medical AI Assistant
+# Core dependencies only - add more as needed
+
+# FastAPI and server
+fastapi==0.115.12
+uvicorn==0.27.1
+gunicorn==23.0.0
+python-dotenv==1.0.0
+pydantic==2.10.4
+
+# Google Cloud and Firebase
+firebase-admin==6.7.0
+google-cloud-firestore==2.20.1
+google-generativeai==0.8.4
+google-auth==2.38.0
+
+# HTTP and async
+requests==2.31.0
+aiohttp==3.9.1
+
+# Basic data processing
+pandas==2.2.0
+numpy==1.26.4 

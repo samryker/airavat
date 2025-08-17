@@ -1,0 +1,591 @@
+{
+  "version": "2.0.0",
+  "description": "Airavat Medical AI Assistant - Complete Firestore Schema",
+  "collections": {
+    "patients": {
+      "description": "Patient profiles with exact field mapping to Flutter frontend",
+      "document_id": "user_id (Firebase Auth UID)",
+      "fields": {
+        "email": {
+          "type": "string",
+          "required": true,
+          "description": "User's email address"
+        },
+        "display_name": {
+          "type": "string",
+          "required": false,
+          "description": "User's display name"
+        },
+        "bmiIndex": {
+          "type": "string",
+          "required": false,
+          "description": "BMI category - exact values from Flutter: Underweight, Normal, Overweight, Obese"
+        },
+        "age": {
+          "type": "number",
+          "required": false,
+          "description": "User's age"
+        },
+        "race": {
+          "type": "string",
+          "required": false,
+          "description": "Race/Descent - exact values from Flutter: Asian, Black, White, Hispanic, Other"
+        },
+        "gender": {
+          "type": "string",
+          "required": false,
+          "description": "Gender - exact values from Flutter: Male, Female, Other"
+        },
+        "medicines": {
+          "type": "string",
+          "required": false,
+          "description": "Current medicines (comma-separated string from Flutter)"
+        },
+        "allergies": {
+          "type": "string",
+          "required": false,
+          "description": "Allergies (comma-separated string from Flutter)"
+        },
+        "history": {
+          "type": "string",
+          "required": false,
+          "description": "Significant Health History (from Flutter)"
+        },
+        "goal": {
+          "type": "string",
+          "required": false,
+          "description": "Health Goal (from Flutter)"
+        },
+        "habits": {
+          "type": "array",
+          "items": "string",
+          "required": false,
+          "description": "Lifestyle habits - exact values from Flutter: Smoking, Unsafe Sex, Alcohol Abuse, Teetotaler, Drug Use, Sugary Foods"
+        },
+        "treatmentPlans": {
+          "type": "array",
+          "items": "object",
+          "required": false,
+          "description": "Treatment plans - exact structure from Flutter TreatmentPlan class",
+          "structure": {
+            "treatmentName": "string",
+            "condition": "string (optional)",
+            "startDate": "timestamp (optional)",
+            "endDate": "timestamp (optional)",
+            "status": "string (optional) - Planned, Ongoing, Completed, Paused, Cancelled"
+          }
+        },
+        "createdAt": {
+          "type": "timestamp",
+          "required": false,
+          "description": "Account creation timestamp"
+        },
+        "updatedAt": {
+          "type": "timestamp",
+          "required": false,
+          "description": "Last update timestamp"
+        },
+        "lastLogin": {
+          "type": "timestamp",
+          "required": false,
+          "description": "Last login timestamp"
+        },
+        "isActive": {
+          "type": "boolean",
+          "required": false,
+          "default": true,
+          "description": "Account active status"
+        },
+        "emailVerified": {
+          "type": "boolean",
+          "required": false,
+          "default": false,
+          "description": "Email verification status"
+        },
+        "doctor_contacts": {
+          "type": "array",
+          "items": "object",
+          "required": false,
+          "description": "Doctor contact information",
+          "structure": {
+            "doctor_id": "string",
+            "name": "string",
+            "email": "string",
+            "specialty": "string",
+            "phone": "string (optional)",
+            "hospital": "string (optional)",
+            "notes": "string (optional)",
+            "added_date": "timestamp"
+          }
+        },
+        "medical_history": {
+          "type": "array",
+          "items": "object",
+          "required": false,
+          "description": "Medical history entries",
+          "structure": {
+            "entry_id": "string",
+            "date": "timestamp",
+            "condition": "string",
+            "diagnosis": "string",
+            "treatment": "string",
+            "doctor": "string",
+            "notes": "string (optional)",
+            "severity": "string (low, medium, high)"
+          }
+        },
+        "emergency_contacts": {
+          "type": "array",
+          "items": "object",
+          "required": false,
+          "description": "Emergency contact information",
+          "structure": {
+            "contact_id": "string",
+            "name": "string",
+            "relationship": "string",
+            "phone": "string",
+            "email": "string (optional)",
+            "is_primary": "boolean"
+          }
+        },
+        "insurance_info": {
+          "type": "object",
+          "required": false,
+          "description": "Insurance information",
+          "structure": {
+            "provider": "string",
+            "policy_number": "string",
+            "group_number": "string (optional)",
+            "expiry_date": "timestamp (optional)",
+            "coverage_type": "string"
+          }
+        },
+        "notification_preferences": {
+          "type": "object",
+          "required": false,
+          "description": "Notification preferences",
+          "structure": {
+            "email_notifications": "boolean",
+            "push_notifications": "boolean",
+            "sms_notifications": "boolean",
+            "medication_reminders": "boolean",
+            "appointment_reminders": "boolean",
+            "medical_alerts": "boolean"
+          }
+        },
+        "privacy_settings": {
+          "type": "object",
+          "required": false,
+          "description": "Privacy settings",
+          "structure": {
+            "share_data_with_doctors": "boolean",
+            "share_data_for_research": "boolean",
+            "allow_ai_analysis": "boolean",
+            "data_retention_period": "number (days)"
+          }
+        }
+      }
+    },
+    "biomarkers": {
+      "description": "Biomarker reports subcollection per patient",
+      "document_id": "user_id",
+      "subcollections": {
+        "reports": {
+          "description": "Individual biomarker reports",
+          "document_id": "auto-generated",
+          "fields": {
+            "biomarkers": {
+              "type": "object",
+              "required": true,
+              "description": "Biomarker data (key-value pairs)"
+            },
+            "reportType": {
+              "type": "string",
+              "required": false,
+              "default": "general",
+              "description": "Type of biomarker report"
+            },
+            "timestamp": {
+              "type": "timestamp",
+              "required": true,
+              "description": "Report timestamp"
+            }
+          }
+        }
+      }
+    },
+    "twin_customizations": {
+      "description": "3D twin customization data per user",
+      "document_id": "user_id",
+      "fields": {
+        "userId": {
+          "type": "string",
+          "required": true,
+          "description": "User ID"
+        },
+        "biomarkers": {
+          "type": "object",
+          "required": false,
+          "description": "Current biomarker values for 3D visualization"
+        },
+        "organColors": {
+          "type": "object",
+          "required": false,
+          "description": "Organ color mappings for 3D twin"
+        },
+        "highlightedOrgans": {
+          "type": "array",
+          "items": "string",
+          "required": false,
+          "description": "List of highlighted organs"
+        },
+        "modelUrl": {
+          "type": "string",
+          "required": false,
+          "description": "URL to 3D model file"
+        },
+        "lastUpdated": {
+          "type": "timestamp",
+          "required": false,
+          "description": "Last update timestamp"
+        }
+      }
+    },
+    "alerts": {
+      "description": "Medical alerts and notifications",
+      "document_id": "user_id",
+      "fields": {
+        "alert_id": {
+          "type": "string",
+          "required": true,
+          "description": "Unique alert identifier"
+        },
+        "type": {
+          "type": "string",
+          "required": true,
+          "description": "Alert type: medical_alert, medication_reminder, appointment_reminder, etc."
+        },
+        "title": {
+          "type": "string",
+          "required": true,
+          "description": "Alert title"
+        },
+        "message": {
+          "type": "string",
+          "required": true,
+          "description": "Alert message"
+        },
+        "priority": {
+          "type": "string",
+          "required": true,
+          "description": "Priority level: low, medium, high, urgent"
+        },
+        "created_at": {
+          "type": "timestamp",
+          "required": true,
+          "description": "Alert creation timestamp"
+        },
+        "read_at": {
+          "type": "timestamp",
+          "required": false,
+          "description": "When alert was read"
+        },
+        "action_url": {
+          "type": "string",
+          "required": false,
+          "description": "URL for action button"
+        },
+        "metadata": {
+          "type": "object",
+          "required": false,
+          "description": "Additional alert metadata"
+        }
+      }
+    },
+    "tasks": {
+      "description": "User tasks and reminders",
+      "document_id": "auto-generated",
+      "fields": {
+        "task_id": {
+          "type": "string",
+          "required": true,
+          "description": "Unique task identifier"
+        },
+        "user_id": {
+          "type": "string",
+          "required": true,
+          "description": "User ID"
+        },
+        "title": {
+          "type": "string",
+          "required": true,
+          "description": "Task title"
+        },
+        "description": {
+          "type": "string",
+          "required": true,
+          "description": "Task description"
+        },
+        "task_type": {
+          "type": "string",
+          "required": true,
+          "description": "Task type: medication, appointment, test, lifestyle, general"
+        },
+        "priority": {
+          "type": "string",
+          "required": true,
+          "description": "Priority: low, medium, high, urgent"
+        },
+        "status": {
+          "type": "string",
+          "required": true,
+          "description": "Status: pending, in_progress, completed, cancelled"
+        },
+        "due_date": {
+          "type": "timestamp",
+          "required": true,
+          "description": "Task due date"
+        },
+        "created_date": {
+          "type": "timestamp",
+          "required": true,
+          "description": "Task creation date"
+        },
+        "completed_date": {
+          "type": "timestamp",
+          "required": false,
+          "description": "Task completion date"
+        },
+        "recurring": {
+          "type": "boolean",
+          "required": false,
+          "default": false,
+          "description": "Whether task is recurring"
+        },
+        "recurring_pattern": {
+          "type": "string",
+          "required": false,
+          "description": "Recurring pattern: daily, weekly, monthly, hourly"
+        },
+        "tags": {
+          "type": "array",
+          "items": "string",
+          "required": false,
+          "description": "Task tags"
+        },
+        "metadata": {
+          "type": "object",
+          "required": false,
+          "description": "Additional task metadata"
+        }
+      }
+    },
+    "notifications": {
+      "description": "User notifications",
+      "document_id": "auto-generated",
+      "fields": {
+        "notification_id": {
+          "type": "string",
+          "required": true,
+          "description": "Unique notification identifier"
+        },
+        "user_id": {
+          "type": "string",
+          "required": true,
+          "description": "User ID"
+        },
+        "notification_type": {
+          "type": "string",
+          "required": true,
+          "description": "Notification type"
+        },
+        "title": {
+          "type": "string",
+          "required": true,
+          "description": "Notification title"
+        },
+        "message": {
+          "type": "string",
+          "required": true,
+          "description": "Notification message"
+        },
+        "priority": {
+          "type": "string",
+          "required": true,
+          "description": "Priority level"
+        },
+        "created_date": {
+          "type": "timestamp",
+          "required": true,
+          "description": "Creation timestamp"
+        },
+        "read_date": {
+          "type": "timestamp",
+          "required": false,
+          "description": "Read timestamp"
+        },
+        "action_url": {
+          "type": "string",
+          "required": false,
+          "description": "Action URL"
+        },
+        "metadata": {
+          "type": "object",
+          "required": false,
+          "description": "Additional metadata"
+        }
+      }
+    },
+    "genetic_reports": {
+      "description": "Genetic analysis reports",
+      "document_id": "auto-generated",
+      "fields": {
+        "report_id": {
+          "type": "string",
+          "required": true,
+          "description": "Unique report identifier"
+        },
+        "user_id": {
+          "type": "string",
+          "required": true,
+          "description": "User ID"
+        },
+        "report_type": {
+          "type": "string",
+          "required": true,
+          "description": "Report type: genetic_test, dna_sequence, gene_expression, etc."
+        },
+        "upload_date": {
+          "type": "timestamp",
+          "required": true,
+          "description": "Upload timestamp"
+        },
+        "analysis_date": {
+          "type": "timestamp",
+          "required": false,
+          "description": "Analysis completion timestamp"
+        },
+        "status": {
+          "type": "string",
+          "required": true,
+          "description": "Status: pending, processing, completed, failed"
+        },
+        "file_path": {
+          "type": "string",
+          "required": true,
+          "description": "File path in Firebase Storage"
+        },
+        "file_size": {
+          "type": "number",
+          "required": true,
+          "description": "File size in bytes"
+        },
+        "markers": {
+          "type": "array",
+          "items": "object",
+          "required": false,
+          "description": "Genetic markers found"
+        },
+        "crispr_targets": {
+          "type": "array",
+          "items": "object",
+          "required": false,
+          "description": "CRISPR editing targets"
+        },
+        "summary": {
+          "type": "object",
+          "required": false,
+          "description": "Analysis summary"
+        },
+        "raw_data": {
+          "type": "object",
+          "required": false,
+          "description": "Raw analysis data"
+        }
+      }
+    },
+    "email_logs": {
+      "description": "Email sending logs for tracking",
+      "document_id": "auto-generated",
+      "fields": {
+        "to_email": {
+          "type": "string",
+          "required": true,
+          "description": "Recipient email"
+        },
+        "email_type": {
+          "type": "string",
+          "required": true,
+          "description": "Email type: welcome, password_reset, medical_alert, etc."
+        },
+        "context": {
+          "type": "object",
+          "required": true,
+          "description": "Email context data"
+        },
+        "sent_at": {
+          "type": "timestamp",
+          "required": true,
+          "description": "Sent timestamp"
+        },
+        "status": {
+          "type": "string",
+          "required": true,
+          "description": "Status: sent, failed, pending"
+        }
+      }
+    }
+  },
+  "indexes": {
+    "patients": [
+      {
+        "fields": ["email"],
+        "queryScope": "COLLECTION"
+      },
+      {
+        "fields": ["createdAt"],
+        "queryScope": "COLLECTION"
+      }
+    ],
+    "tasks": [
+      {
+        "fields": ["user_id", "due_date"],
+        "queryScope": "COLLECTION"
+      },
+      {
+        "fields": ["user_id", "status"],
+        "queryScope": "COLLECTION"
+      }
+    ],
+    "notifications": [
+      {
+        "fields": ["user_id", "created_date"],
+        "queryScope": "COLLECTION"
+      },
+      {
+        "fields": ["user_id", "read_date"],
+        "queryScope": "COLLECTION"
+      }
+    ],
+    "genetic_reports": [
+      {
+        "fields": ["user_id", "upload_date"],
+        "queryScope": "COLLECTION"
+      },
+      {
+        "fields": ["user_id", "status"],
+        "queryScope": "COLLECTION"
+      }
+    ]
+  },
+  "security_rules": {
+    "patients": "request.auth != null && request.auth.uid == resource.data.user_id",
+    "biomarkers": "request.auth != null && request.auth.uid == resource.data.user_id",
+    "twin_customizations": "request.auth != null && request.auth.uid == resource.data.user_id",
+    "alerts": "request.auth != null && request.auth.uid == resource.data.user_id",
+    "tasks": "request.auth != null && request.auth.uid == resource.data.user_id",
+    "notifications": "request.auth != null && request.auth.uid == resource.data.user_id",
+    "genetic_reports": "request.auth != null && request.auth.uid == resource.data.user_id",
+    "email_logs": "request.auth != null && request.auth.token.admin == true"
+  }
+}

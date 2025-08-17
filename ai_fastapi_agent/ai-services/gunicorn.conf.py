@@ -10,7 +10,7 @@ sys.path.insert(0, str(current_dir))
 # Use PORT environment variable (Cloud Run provides this) or default to 8000
 port = int(os.environ.get("PORT", 8000))
 bind = f"0.0.0.0:{port}"
-workers = 2
+workers = 1  # Reduced for Cloud Run
 worker_class = "uvicorn.workers.UvicornWorker"
 worker_connections = 1000
 timeout = 300
@@ -29,7 +29,6 @@ def on_starting(server):
     print(f"🚀 Starting Airavat Medical Agent API on {bind}")
     print(f"📁 Working directory: {os.getcwd()}")
     print(f"🐍 Python path: {current_dir}")
-    print(f"🔧 Environment: PYTHONPATH={current_dir}")
     print(f"🌐 Port: {port}")
 
 def when_ready(server):
@@ -46,4 +45,8 @@ def worker_abort(worker):
 
 def post_worker_init(worker):
     """Called just after a worker has initialized the application."""
-    print(f"🔧 Worker {worker.pid} initialized with PYTHONPATH: {os.environ.get('PYTHONPATH', 'not set')}") 
+    print(f"🔧 Worker {worker.pid} initialized with PYTHONPATH: {os.environ.get('PYTHONPATH', 'not set')}")
+
+def worker_exit(server, worker):
+    """Called when a worker exits."""
+    print(f"👋 Worker {worker.pid} exited") 

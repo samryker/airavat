@@ -121,55 +121,57 @@ def format_patient_record_for_prompt(patient_record: Dict[str, Any]) -> List[str
 
 async def get_treatment_suggestion_from_gemini(patient_query: PatientQuery, firestore_context: Dict[str, Any] = None) -> StructuredGeminiOutput:
     default_error_features = GeminiResponseFeatures(category="error_response", urgency="unknown", actionable_steps_present=False)
-    if not model:
-        logger.warning("Gemini model not available. Returning fallback response.")
+    
+    # Initialize Gemini model
+    try:
+        import google.generativeai as genai
+        import os
+        from dotenv import load_dotenv
+        
+        load_dotenv()
+        gemini_api_key = os.getenv("GEMINI_API_KEY")
+        
+        if not gemini_api_key:
+            logger.warning("GEMINI_API_KEY not found. Returning fallback response.")
+            return StructuredGeminiOutput(
+                text="I'm here to help with your health questions. Please note that AI features are currently limited. For medical advice, always consult with a qualified healthcare professional.",
+                features=GeminiResponseFeatures(
+                    category="general_advice",
+                    urgency="low",
+                    keywords=["health", "consultation"],
+                    actionable_steps_present=True
+                )
+            )
+        
+        genai.configure(api_key=gemini_api_key)
+        model = genai.GenerativeModel('gemini-1.5-pro')
+        
+    except Exception as e:
+        logger.error(f"Error initializing Gemini model: {e}")
         return StructuredGeminiOutput(
             text="I'm here to help with your health questions. Please note that AI features are currently limited. For medical advice, always consult with a qualified healthcare professional.",
-            features=GeminiResponseFeatures(
-                category="general_advice",
-                urgency="low",
-                keywords=["health", "consultation"],
-                actionable_steps_present=True
-            )
+            features=default_error_features
         )
 
     # Construct JSON schema based on Pydantic model for the prompt
     json_schema_prompt = f"""\
-Please respond ONLY with a JSON object matching the following schema:
+Please respond ONLY with a JSON object matching the following Pydantic model schema:
 ```json
 {{
-  "text": "string (Your comprehensive medical response with analysis, insights, and recommendations)",
-  "features": {{
-    "category": "string (e.g., symptom_analysis, treatment_advice, lifestyle_recommendation, emergency_warning, general_health)",
-    "urgency": "string (e.g., low, medium, high, emergency)",
-    "keywords": ["string (important medical terms and concepts from your response)"],
-    "actionable_steps_present": "boolean (True if you provided specific actionable steps)"
+  \"text\": \"string (The main textual suggestion for the user)\",
+  \"features\": {{
+    \"category\": \"string (e.g., general_advice, specific_recommendation, further_questions, error_response)\",
+    \"urgency\": \"string (e.g., low, medium, high)\",
+    \"keywords\": [\"string (important keywords from suggestion)\"],
+    \"actionable_steps_present\": \"boolean (True if suggestion has clear actionable steps)\"
   }}
 }}
 ```
-
-Your response should be:
-- Comprehensive and medically informed
-- Personalized to the patient's context when available
-- Clear about when to seek professional medical care
-- Evidence-based and practical
-- Compassionate and professional
-
 Ensure the entire response is a single, valid JSON object and nothing else.
 """
 
     prompt_parts = [
-        """You are Airavat, an advanced AI medical assistant specializing in oncology and general health. You provide personalized, evidence-based medical guidance while always emphasizing the importance of professional healthcare consultation.
-
-Your role is to:
-1. Analyze patient symptoms and concerns with medical expertise
-2. Provide evidence-based information and preliminary insights
-3. Consider patient's medical history, medications, and context
-4. Suggest appropriate next steps and monitoring strategies
-5. Always recommend consulting healthcare professionals for serious concerns
-6. Be compassionate, clear, and professional in your responses
-
-IMPORTANT: You are NOT a replacement for professional medical care. Always advise patients to consult with qualified healthcare providers for diagnosis and treatment decisions.""",
+        "You are Airavat, an AI medical assistant specializing in oncology... Always advise user to consult with a qualified healthcare professional...",
         f"Patient Query: {patient_query.query_text}",
     ]
 
@@ -191,13 +193,7 @@ IMPORTANT: You are NOT a replacement for professional medical care. Always advis
         prompt_parts.append("  No additional patient context available from records.")
     
     prompt_parts.append("\n--- End of Patient Record Information ---")
-    prompt_parts.append("\nBased on the patient's query and available medical context, provide a comprehensive medical analysis including:")
-    prompt_parts.append("1. Analysis of the reported symptoms or concerns")
-    prompt_parts.append("2. Potential causes and contributing factors")
-    prompt_parts.append("3. Evidence-based recommendations and next steps")
-    prompt_parts.append("4. When to seek immediate medical attention")
-    prompt_parts.append("5. Lifestyle and preventive measures if applicable")
-    prompt_parts.append("6. Clear guidance on consulting healthcare professionals")
+    prompt_parts.append("\nBased on all the above, provide your preliminary suggestions and insights.")
     prompt_parts.append(json_schema_prompt)
     
     full_prompt = "\n".join(prompt_parts)
@@ -208,7 +204,15 @@ IMPORTANT: You are NOT a replacement for professional medical care. Always advis
         raw_response_text = response.text
         logger.info(f"Raw Gemini JSON response: {raw_response_text}")
         
-        parsed_json = json.loads(raw_response_text)
+        # Clean the response text to remove markdown formatting
+        cleaned_response = raw_response_text.strip()
+        if cleaned_response.startswith('```json'):
+            cleaned_response = cleaned_response[7:]  # Remove ```json
+        if cleaned_response.endswith('```'):
+            cleaned_response = cleaned_response[:-3]  # Remove ```
+        cleaned_response = cleaned_response.strip()
+        
+        parsed_json = json.loads(cleaned_response)
         structured_output = StructuredGeminiOutput(**parsed_json)
         return structured_output
     

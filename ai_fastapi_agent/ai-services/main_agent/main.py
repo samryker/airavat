@@ -1,17 +1,57 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from .data_models import PatientQuery, AgentResponse, FeedbackDataModel, TreatmentPlanUpdate
 from .agent_core import MedicalAgent
 from .mcp_medical_agent import MCPMedicalAgent
 from .firestore_service import FirestoreService
-from mcp_config import get_mcp_db_engine, is_mcp_available
+from mcp_config import mcp_config
 import uvicorn # For running the app directly if needed
 import firebase_admin
 from firebase_admin import credentials, firestore
 import os
 from dotenv import load_dotenv
 import logging # Added logging
-from typing import Dict, Any
+from typing import Dict, Any, List
 from fastapi.middleware.cors import CORSMiddleware
+from datetime import datetime
+from google import generativeai as genai
+
+# Optional imports for new services
+try:
+    from .genetic_analysis_service import GeneticAnalysisService
+    GENETIC_AVAILABLE = True
+except ImportError:
+    GeneticAnalysisService = None
+    GENETIC_AVAILABLE = False
+
+try:
+    from .notification_service import NotificationService
+    NOTIFICATION_AVAILABLE = True
+except ImportError:
+    NotificationService = None
+    NOTIFICATION_AVAILABLE = False
+
+try:
+    from .user_data_service import UserDataService
+    USER_DATA_AVAILABLE = True
+except ImportError:
+    UserDataService = None
+    USER_DATA_AVAILABLE = False
+
+# Try both import styles for SMPL router (top-level and relative)
+SMPL_AVAILABLE = False
+smpl_router = None
+try:
+    from smpl_service.router import router as smpl_router
+    SMPL_AVAILABLE = True
+except Exception as e1:
+    try:
+        from ..smpl_service.router import router as smpl_router
+        SMPL_AVAILABLE = True
+    except Exception as e2:
+        smpl_router = None
+        SMPL_AVAILABLE = False
+        # Set up basic logger early to record why SMPL failed
+        logging.getLogger("api").warning(f"SMPL router import failed: top-level={e1}; relative={e2}")
 
 load_dotenv() # Load environment variables from .env
 
@@ -21,8 +61,8 @@ logging.basicConfig(level=logging.INFO) # Basic config, can be more sophisticate
 
 app = FastAPI(
     title="Airavat Medical Agent API",
-    description="API for interacting with the AI Medical Agent, including dynamic planning and RL-based feedback.",
-    version="0.2.0", # Incremented version
+    description="API for interacting with the AI Medical Agent, including dynamic planning, RL-based feedback, genetic analysis, notifications, and SMPL.",
+    version="0.4.0", # Incremented version for new features
 )
 
 # Add CORS middleware
@@ -40,6 +80,60 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+if SMPL_AVAILABLE and smpl_router:
+    app.include_router(smpl_router)
+else:
+    logger.warning("SMPL router not available; /smpl endpoints will not be served")
+
+# Fallback inline SMPL endpoints (ensure availability in Cloud Run)
+_SMPL_ASSETS_BASE_URL = os.getenv("SMPL_ASSETS_BASE_URL", "")
+
+@app.get("/smpl/health")
+async def smpl_health_inline():
+    return {
+        "status": "ok",
+        "assets_base_url": _SMPL_ASSETS_BASE_URL or None,
+    }
+
+@app.get("/smpl/generate")
+async def smpl_generate_inline(
+    patient_id: str | None = None,
+    height: float | None = 170.0,
+    weight: float | None = 70.0,
+    gender: str | None = "neutral",
+    model: str | None = None,
+    beta1: float | None = None,
+):
+    # Choose model
+    selected = model if model in {"male", "female", "neutral"} else (
+        gender if gender in {"male", "female"} else "neutral"
+    )
+    asset_file = f"{selected}.glb"
+    asset_url = (
+        f"{_SMPL_ASSETS_BASE_URL.rstrip('/')}/{asset_file}"
+        if _SMPL_ASSETS_BASE_URL else None
+    )
+    bmi = None
+    try:
+        if height and weight and height > 0:
+            bmi = round(weight / ((height / 100.0) ** 2), 1)
+    except Exception:
+        bmi = None
+    return {
+        "status": "ok",
+        "patient_id": patient_id,
+        "model": selected,
+        "asset_file": asset_file,
+        "asset_url": asset_url,
+        "parameters": {
+            "height_cm": height,
+            "weight_kg": weight,
+            "gender": gender,
+            "beta1": beta1,
+            "bmi": bmi,
+        },
+    }
 
 # --- Firebase Admin SDK Initialization ---
 try:
@@ -76,22 +170,13 @@ mcp_db_engine = None
 mcp_agent = None
 
 try:
-    if is_mcp_available():
-        mcp_db_engine = get_mcp_db_engine()
-        if mcp_db_engine:
-            logger.info("MCP database engine initialized successfully.")
-            
-            # Initialize MCP Medical Agent with database engine and Firestore service
-            firestore_service = FirestoreService(db) if db else None
-            mcp_agent = MCPMedicalAgent(
-                db_engine=mcp_db_engine,
-                firestore_service=firestore_service
-            )
-            logger.info("MCP Medical Agent initialized successfully with lifelong memory capabilities.")
-        else:
-            logger.warning("MCP database engine could not be initialized. MCP features will be unavailable.")
-    else:
-        logger.info("MCP is not available (missing environment variables or dependencies). MCP features will be unavailable.")
+    # Initialize MCP Medical Agent with database engine and Firestore service
+    firestore_service = FirestoreService(db) if db else None
+    mcp_agent = MCPMedicalAgent(
+        db_engine=mcp_db_engine,
+        firestore_service=firestore_service
+    )
+    logger.info("MCP Medical Agent initialized successfully with lifelong memory capabilities.")
 except Exception as e:
     logger.exception(f"Error initializing MCP components: {e}")
     mcp_agent = None
@@ -102,6 +187,32 @@ except Exception as e:
 # For simplicity, a single global instance is created here.
 # In a production system, you might manage this differently (e.g., with dependency injection).
 medical_agent = MedicalAgent(db=db, mcp_agent=mcp_agent) # Pass Firestore client and MCP agent to the agent
+
+# Initialize additional services (optional)
+genetic_service = None
+notification_service = None
+user_data_service = None
+
+if GENETIC_AVAILABLE and db:
+    try:
+        genetic_service = GeneticAnalysisService(db=db)
+        logger.info("Genetic Analysis Service initialized successfully.")
+    except Exception as e:
+        logger.warning(f"Failed to initialize Genetic Analysis Service: {e}")
+
+if NOTIFICATION_AVAILABLE and db:
+    try:
+        notification_service = NotificationService(db=db)
+        logger.info("Notification Service initialized successfully.")
+    except Exception as e:
+        logger.warning(f"Failed to initialize Notification Service: {e}")
+
+if USER_DATA_AVAILABLE and db:
+    try:
+        user_data_service = UserDataService(db=db)
+        logger.info("User Data Service initialized successfully.")
+    except Exception as e:
+        logger.warning(f"Failed to initialize User Data Service: {e}")
 
 @app.post("/agent/query", response_model=AgentResponse)
 async def query_agent(patient_query: PatientQuery):
@@ -196,7 +307,7 @@ async def health_check():
             "mcp_database": "available" if mcp_db_engine else "unavailable"
         },
         "mcp_config": {
-            "available": is_mcp_available(),
+            "available": mcp_config.is_ready(),
             "db_type": os.getenv("MCP_DB_TYPE", "not_set")
         }
     }
@@ -208,48 +319,104 @@ async def read_root():
 
 @app.get("/agent/patient/{patient_id}/context")
 async def get_patient_context(patient_id: str):
-    """
-    Get complete patient context including profile, treatment plans, biomarkers, and conversation history.
-    This provides the digital twin with comprehensive patient information.
-    """
-    logger.info(f"Retrieving complete context for patient: {patient_id}")
+    """Get complete patient context including profile, treatment plans, biomarkers, and memory"""
     try:
-        context = await medical_agent.get_patient_context(patient_id)
+        if not medical_agent:
+            return {"status": "error", "message": "Medical agent not available"}
+        
+        # Get patient data from Firestore
+        patient_ref = db.collection('patients').document(patient_id)
+        patient_doc = patient_ref.get()  # Remove await - this is not async
+        
+        # Get memory data from MCP
+        memory_data = None
+        if medical_agent.mcp_agent:
+            try:
+                memory_data = await medical_agent.mcp_agent.get_memory(patient_id)
+            except Exception as e:
+                logger.warning(f"MCP memory retrieval failed: {e}")
+        
+        # Get conversation history
+        conversation_history = []
+        try:
+            history_ref = db.collection('conversations').document(patient_id)
+            history_doc = history_ref.get()  # Remove await - this is not async
+            if history_doc.exists:
+                history_data = history_doc.to_dict()
+                conversation_history = history_data.get('messages', [])
+        except Exception as e:
+            logger.warning(f"Conversation history retrieval failed: {e}")
+        
+        # Compile context
+        context = {
+            'patient_id': patient_id,
+            'profile': {},
+            'treatment_plans': [],
+            'biomarkers': {},
+            'conversation_history': conversation_history,
+            'mcp_memory': memory_data or {},
+            'last_updated': datetime.datetime.now().isoformat()
+        }
+        
+        if patient_doc.exists:
+            patient_data = patient_doc.to_dict()
+            context['profile'] = patient_data.get('profile', {})
+            context['treatment_plans'] = patient_data.get('treatmentPlans', [])
+            context['biomarkers'] = patient_data.get('biomarkers', {})
+        
         return {
             "status": "success",
-            "patient_id": patient_id,
-            "context": context,
-            "timestamp": "2024-01-01T00:00:00Z"
+            "context": context
         }
+        
     except Exception as e:
-        logger.exception(f"Error retrieving context for patient {patient_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
+        logger.error(f"Error retrieving patient context: {e}")
+        return {"status": "error", "message": f"Failed to retrieve patient context: {str(e)}"}
 
 @app.get("/agent/patient/{patient_id}/conversation-history")
 async def get_conversation_history(patient_id: str, limit: int = 10):
-    """
-    Get conversation history for a patient from Firestore interaction logs.
-    """
-    logger.info(f"Retrieving conversation history for patient: {patient_id}")
+    """Get conversation history for a patient"""
     try:
-        if medical_agent.firestore_service:
-            history = await medical_agent.firestore_service.get_conversation_history(patient_id, limit)
-            return {
-                "status": "success",
-                "patient_id": patient_id,
-                "conversation_history": history,
-                "count": len(history),
-                "limit": limit
-            }
-        else:
-            return {
-                "status": "error",
-                "message": "Firestore service not available",
-                "patient_id": patient_id
-            }
+        if not db:
+            return {"status": "error", "message": "Database not available"}
+        
+        # Get conversation history from Firestore
+        history_ref = db.collection('conversations').document(patient_id)
+        history_doc = history_ref.get()  # Remove await - this is not async
+        
+        conversation_history = []
+        if history_doc.exists:
+            history_data = history_doc.to_dict()
+            messages = history_data.get('messages', [])
+            # Return the most recent messages
+            conversation_history = messages[:limit]  # Fix: use slice instead of take()
+        
+        return {
+            "status": "success",
+            "conversation_history": conversation_history
+        }
+        
     except Exception as e:
-        logger.exception(f"Error retrieving conversation history for patient {patient_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
+        logger.error(f"Error retrieving conversation history: {e}")
+        return {"status": "error", "message": f"Failed to retrieve conversation history: {str(e)}"}
+
+@app.get("/agent/memory/{patient_id}")
+async def get_patient_memory(patient_id: str):
+    """Get patient memory data from MCP"""
+    try:
+        if not medical_agent or not medical_agent.mcp_agent:
+            return {"status": "error", "message": "MCP agent not available"}
+        
+        memory_data = await medical_agent.mcp_agent.get_memory(patient_id)
+        
+        return {
+            "status": "success",
+            "memory_data": memory_data
+        }
+        
+    except Exception as e:
+        logger.error(f"Error retrieving patient memory: {e}")
+        return {"status": "error", "message": f"Failed to retrieve patient memory: {str(e)}"}
 
 @app.post("/agent/patient/{patient_id}/treatment-plan")
 async def update_patient_treatment_plan(patient_id: str, treatment_plan: dict):
@@ -317,6 +484,487 @@ async def get_patient_biomarkers(patient_id: str):
     except Exception as e:
         logger.exception(f"Error retrieving biomarkers for patient {patient_id}: {e}")
         raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
+
+# =============================================================================
+# GENETIC ANALYSIS ENDPOINTS
+# =============================================================================
+
+@app.post("/genetic/upload")
+async def upload_genetic_report(
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
+    report_type: str = Form("unknown")
+):
+    """
+    Upload a genetic report file for analysis
+    """
+    logger.info(f"Uploading genetic report for user: {user_id}")
+    try:
+        if not genetic_service:
+            raise HTTPException(status_code=503, detail="Genetic analysis service not available")
+        
+        # Read file data
+        file_data = await file.read()
+        
+        # Check file size (10MB limit)
+        max_size = 10 * 1024 * 1024  # 10MB
+        if len(file_data) > max_size:
+            raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB")
+        
+        # Upload and process
+        report_id = await genetic_service.upload_genetic_report(
+            user_id=user_id,
+            file_data=file_data,
+            filename=file.filename,
+            report_type=report_type
+        )
+        
+        return {
+            "status": "success",
+            "message": "Genetic report uploaded successfully",
+            "report_id": report_id,
+            "user_id": user_id,
+            "filename": file.filename
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error uploading genetic report: {e}")
+        raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
+
+@app.get("/genetic/reports/{report_id}")
+async def get_genetic_report(report_id: str):
+    """
+    Get a specific genetic report by ID
+    """
+    logger.info(f"Retrieving genetic report: {report_id}")
+    try:
+        if not genetic_service:
+            raise HTTPException(status_code=503, detail="Genetic analysis service not available")
+        
+        report = await genetic_service.get_genetic_report(report_id)
+        if not report:
+            raise HTTPException(status_code=404, detail="Genetic report not found")
+        
+        return {
+            "status": "success",
+            "report": report
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error retrieving genetic report: {e}")
+        raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
+
+@app.get("/genetic/reports/user/{user_id}")
+async def get_user_genetic_reports(user_id: str):
+    """
+    Get all genetic reports for a user
+    """
+    logger.info(f"Retrieving genetic reports for user: {user_id}")
+    try:
+        if not genetic_service:
+            raise HTTPException(status_code=503, detail="Genetic analysis service not available")
+        
+        reports = await genetic_service.get_user_reports(user_id)
+        
+        return {
+            "status": "success",
+            "user_id": user_id,
+            "reports": reports,
+            "count": len(reports)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error retrieving user genetic reports: {e}")
+        raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
+
+# =============================================================================
+# NOTIFICATION ENDPOINTS
+# =============================================================================
+
+@app.post("/notifications/create")
+async def create_notification(
+    user_id: str,
+    title: str,
+    message: str,
+    notification_type: str = "general_reminder",
+    priority: str = "medium",
+    scheduled_time: str = None
+):
+    """
+    Create a new notification for a user
+    """
+    logger.info(f"Creating notification for user: {user_id}")
+    try:
+        # Check if notification service is available
+        if not notification_service:
+            logger.warning("Notification service not available, using Firestore fallback")
+            
+            # Fallback: Create notification directly in Firestore
+            notification_data = {
+                'user_id': user_id,
+                'title': title,
+                'message': message,
+                'notification_type': notification_type,
+                'priority': priority,
+                'created_at': firestore.SERVER_TIMESTAMP,
+                'scheduled_time': scheduled_time,
+                'status': 'pending'
+            }
+            
+            # Store in Firestore
+            notification_ref = db.collection('notifications').document()
+            notification_ref.set(notification_data)
+            
+            return {
+                "status": "success",
+                "message": "Notification created successfully (fallback mode)",
+                "user_id": user_id,
+                "notification_id": notification_ref.id
+            }
+        
+        # Use notification service if available
+        from .notification_service import NotificationType, NotificationPriority
+        
+        # Parse notification type and priority
+        try:
+            notif_type = NotificationType(notification_type)
+            notif_priority = NotificationPriority(priority)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid notification type or priority")
+        
+        # Create notification
+        success = await notification_service.send_immediate_notification(
+            patient_id=user_id,
+            title=title,
+            message=message,
+            notification_type=notif_type,
+            priority=notif_priority
+        )
+        
+        if success:
+            return {
+                "status": "success",
+                "message": "Notification created successfully",
+                "user_id": user_id
+            }
+        else:
+            return {
+                "status": "error",
+                "message": "Failed to create notification",
+                "user_id": user_id
+            }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error creating notification: {e}")
+        # Return error response instead of 500 status
+        return {
+            "status": "error",
+            "message": f"Failed to create notification: {str(e)}",
+            "user_id": user_id
+        }
+
+@app.get("/notifications/user/{user_id}")
+async def get_user_notifications(user_id: str, limit: int = 50):
+    """
+    Get notifications for a user
+    """
+    logger.info(f"Retrieving notifications for user: {user_id}")
+    try:
+        if not db:
+            logger.warning("Database not available, returning empty notifications")
+            return {
+                "status": "success",
+                "user_id": user_id,
+                "notifications": [],
+                "count": 0,
+                "message": "Database not available"
+            }
+        
+        notifications = []
+        
+        try:
+            # Try to get notifications with ordering first
+            notifications_ref = db.collection('notifications')
+            query = notifications_ref.where('user_id', '==', user_id).order_by('created_at', direction=firestore.Query.DESCENDING).limit(limit)
+            docs = query.get()
+            
+            for doc in docs:
+                notification_data = doc.to_dict()
+                notification_data['id'] = doc.id
+                notifications.append(notification_data)
+                
+        except Exception as order_error:
+            logger.warning(f"Order by failed, trying without ordering: {order_error}")
+            try:
+                # Fallback: Get notifications without ordering
+                notifications_ref = db.collection('notifications')
+                query = notifications_ref.where('user_id', '==', user_id).limit(limit)
+                docs = query.get()
+                
+                for doc in docs:
+                    notification_data = doc.to_dict()
+                    notification_data['id'] = doc.id
+                    notifications.append(notification_data)
+                    
+                # Sort in Python if we have created_at field
+                notifications.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+                
+            except Exception as fallback_error:
+                logger.warning(f"Fallback query also failed: {fallback_error}")
+                # Return empty notifications rather than error
+                notifications = []
+        
+        return {
+            "status": "success",
+            "user_id": user_id,
+            "notifications": notifications,
+            "count": len(notifications)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error retrieving notifications: {e}")
+        # Return empty notifications instead of 500 error
+        return {
+            "status": "error",
+            "user_id": user_id,
+            "notifications": [],
+            "count": 0,
+            "error": str(e)
+        }
+
+@app.post("/notifications/medication-reminder")
+async def create_medication_reminder(
+    user_id: str,
+    medication_name: str,
+    reminder_time: str,
+    frequency: str = "daily"
+):
+    """
+    Create a medication reminder
+    """
+    logger.info(f"Creating medication reminder for user: {user_id}")
+    try:
+        if not notification_service:
+            raise HTTPException(status_code=503, detail="Notification service not available")
+        
+        from datetime import datetime
+        from .notification_service import NotificationType
+        
+        # Parse reminder time
+        try:
+            reminder_datetime = datetime.fromisoformat(reminder_time.replace('Z', '+00:00'))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid reminder time format")
+        
+        # Create reminder
+        success = await notification_service.create_medication_reminder(
+            patient_id=user_id,
+            medication_name=medication_name,
+            reminder_time=reminder_datetime,
+            frequency=frequency
+        )
+        
+        if success:
+            return {
+                "status": "success",
+                "message": "Medication reminder created successfully",
+                "user_id": user_id,
+                "medication": medication_name
+            }
+        else:
+            return {
+                "status": "error",
+                "message": "Failed to create medication reminder",
+                "user_id": user_id
+            }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error creating medication reminder: {e}")
+        raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
+
+# =============================================================================
+# TASK MANAGEMENT ENDPOINTS
+# =============================================================================
+
+@app.post("/tasks/create")
+async def create_task(
+    user_id: str,
+    title: str,
+    description: str,
+    due_date: str = None,
+    priority: str = "medium",
+    task_type: str = "general"
+):
+    """
+    Create a new task for a user
+    """
+    logger.info(f"Creating task for user: {user_id}")
+    try:
+        # This would integrate with the notification service for reminders
+        # For now, return a placeholder
+        return {
+            "status": "success",
+            "message": "Task created successfully",
+            "user_id": user_id,
+            "task_id": f"task_{user_id}_{int(datetime.utcnow().timestamp())}",
+            "title": title,
+            "description": description,
+            "due_date": due_date,
+            "priority": priority,
+            "task_type": task_type
+        }
+        
+    except Exception as e:
+        logger.exception(f"Error creating task: {e}")
+        raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
+
+@app.get("/tasks/user/{user_id}")
+async def get_user_tasks(user_id: str, status: str = "all"):
+    """
+    Get tasks for a user
+    """
+    logger.info(f"Retrieving tasks for user: {user_id}")
+    try:
+        # This would query the database for user tasks
+        # For now, return a placeholder
+        return {
+            "status": "success",
+            "user_id": user_id,
+            "tasks": [],
+            "count": 0
+        }
+        
+    except Exception as e:
+        logger.exception(f"Error retrieving tasks: {e}")
+        raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
+
+# =============================================================================
+# USER MANAGEMENT ENDPOINTS
+# =============================================================================
+
+@app.get("/user/profile/{user_id}")
+async def get_user_profile(user_id: str):
+    """
+    Get user profile information
+    """
+    logger.info(f"Retrieving profile for user: {user_id}")
+    try:
+        if not user_data_service:
+            raise HTTPException(status_code=503, detail="User data service not available")
+        
+        profile = await user_data_service.get_user_profile(user_id)
+        if not profile:
+            raise HTTPException(status_code=404, detail="User profile not found")
+        
+        return {
+            "status": "success",
+            "profile": profile
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error retrieving user profile: {e}")
+        raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
+
+@app.put("/user/profile/{user_id}")
+async def update_user_profile(user_id: str, profile_data: dict):
+    """
+    Update user profile information
+    """
+    logger.info(f"Updating profile for user: {user_id}")
+    try:
+        if not user_data_service:
+            raise HTTPException(status_code=503, detail="User data service not available")
+        
+        success = await user_data_service.update_user_profile(user_id, profile_data)
+        
+        if success:
+            return {
+                "status": "success",
+                "message": "Profile updated successfully",
+                "user_id": user_id
+            }
+        else:
+            return {
+                "status": "error",
+                "message": "Failed to update profile",
+                "user_id": user_id
+            }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error updating user profile: {e}")
+        raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
+
+@app.post("/files/analyze")
+async def analyze_file(file: UploadFile = File(...)):
+    try:
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
+        genai.configure(api_key=api_key)
+
+        # Read file bytes
+        content = await file.read()
+        mime = file.content_type or "application/octet-stream"
+
+        # Create a temporary file for upload
+        import tempfile
+        import os as temp_os
+        
+        # Create a temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{file.filename or 'upload.txt'}") as temp_file:
+            temp_file.write(content)
+            temp_file_path = temp_file.name
+
+        try:
+            # Upload file to Gemini File API
+            uploaded = genai.upload_file(
+                path=temp_file_path,
+                mime_type=mime,
+                display_name=file.filename or "upload"
+            )
+
+            model = genai.GenerativeModel("gemini-1.5-pro")
+            prompt = (
+                "You are a medical assistant. Read the uploaded file and provide: "
+                "1) A concise medical summary (<= 8 bullet points). "
+                "2) Key biomarkers/values if any. "
+                "3) Possible next steps or questions for the clinician. "
+                "Return JSON with fields: summary, biomarkers, next_steps."
+            )
+            resp = model.generate_content([
+                prompt,
+                uploaded,
+            ])
+
+            text = resp.text or ""
+            return {"status": "success", "analysis": text}
+        finally:
+            # Clean up temporary file
+            try:
+                temp_os.unlink(temp_file_path)
+            except:
+                pass
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"File analysis failed: {e}")
 
 # To run this app directly (for development):
 # uvicorn ai_fastapi_agent.ai-services.main_agent.main:app --reload

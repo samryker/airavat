@@ -7,9 +7,84 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == patientId;
     }
 
+    // LATEST TREATMENT – Per patient latest treatment data
+    match /latest_treatment/{patientId} {
+      allow read, write: if request.auth != null && request.auth.uid == patientId;
+    }
+
+    // TREATMENT PLANS – Historical treatment plans per patient
+    match /treatment_plans/{patientId} {
+      allow read, write: if request.auth != null && request.auth.uid == patientId;
+    }
+
     // BIOMARKERS – Subcollection of reports per patient
     match /biomarkers/{patientId}/reports/{reportId} {
       allow read, write: if request.auth != null && request.auth.uid == patientId;
+    }
+
+    // NOTIFICATIONS – User notifications and reminders
+    match /notifications/{notificationId} {
+      allow read, write: if request.auth != null && 
+        (resource.data.user_id == request.auth.uid || 
+         resource.data.patient_id == request.auth.uid);
+      allow create: if request.auth != null && 
+        (request.resource.data.user_id == request.auth.uid || 
+         request.resource.data.patient_id == request.auth.uid);
+    }
+
+    // INTERACTION LOGS – Chat and interaction history
+    match /interaction_logs/{logId} {
+      allow read, write: if request.auth != null && 
+        (resource.data.patient_id == request.auth.uid ||
+         resource.data.user_id == request.auth.uid);
+      allow create: if request.auth != null && 
+        (request.resource.data.patient_id == request.auth.uid ||
+         request.resource.data.user_id == request.auth.uid);
+    }
+
+    // RESPONSE LOGS – AI response logs
+    match /response_logs/{logId} {
+      allow read, write: if request.auth != null && 
+        (resource.data.patient_id == request.auth.uid ||
+         resource.data.user_id == request.auth.uid);
+      allow create: if request.auth != null && 
+        (request.resource.data.patient_id == request.auth.uid ||
+         request.resource.data.user_id == request.auth.uid);
+    }
+
+    // QUESTIONNAIRES – User questionnaire responses
+    match /questionnaires/{questionnaireId} {
+      allow read, write: if request.auth != null && 
+        (resource.data.patient_id == request.auth.uid ||
+         resource.data.user_id == request.auth.uid);
+      allow create: if request.auth != null && 
+        (request.resource.data.patient_id == request.auth.uid ||
+         request.resource.data.user_id == request.auth.uid);
+    }
+
+    // 3D TWINS – User-specific 3D twin data
+    match /3d_twins/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // PATIENT CONTEXTS – Comprehensive patient context data
+    match /patient_contexts/{patientId} {
+      allow read, write: if request.auth != null && request.auth.uid == patientId;
+    }
+
+    // GENETIC DATA – User genetic analysis data
+    match /genetic_data/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // GENETIC REPORTS – User genetic reports
+    match /genetic_reports/{reportId} {
+      allow read, write: if request.auth != null && 
+        (resource.data.user_id == request.auth.uid ||
+         resource.data.patient_id == request.auth.uid);
+      allow create: if request.auth != null && 
+        (request.resource.data.user_id == request.auth.uid ||
+         request.resource.data.patient_id == request.auth.uid);
     }
 
     // ALERTS – Auto-created by backend, visible only to that patient
@@ -21,6 +96,16 @@ service cloud.firestore {
     // TWIN CUSTOMIZATIONS – User-specific 3D twin data
     match /twin_customizations/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // FEEDBACK – User feedback data
+    match /feedback/{feedbackId} {
+      allow read, write: if request.auth != null && 
+        (resource.data.patient_id == request.auth.uid ||
+         resource.data.user_id == request.auth.uid);
+      allow create: if request.auth != null && 
+        (request.resource.data.patient_id == request.auth.uid ||
+         request.resource.data.user_id == request.auth.uid);
     }
   }
 }

@@ -3,7 +3,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import 'firebase_options.dart';
+import 'config/theme_config.dart';
+import 'providers/theme_provider.dart';
 
 import 'screens/splash.dart';
 import 'screens/signup_screen.dart';
@@ -20,7 +23,12 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  runApp(DigitalTwinApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (context) => ThemeProvider(),
+      child: DigitalTwinApp(),
+    ),
+  );
 }
 
 class DigitalTwinApp extends StatelessWidget {
@@ -51,17 +59,18 @@ class DigitalTwinApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp.router(
-      title: 'Digital Twin',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1E3A8A),
-          secondary: const Color(0xFFF59E0B),
-        ),
-        scaffoldBackgroundColor: Colors.white,
-        fontFamily: 'Roboto',
-      ),
-      routerConfig: _router,
+    return Consumer<ThemeProvider>(
+      builder: (context, themeProvider, child) {
+        return MaterialApp.router(
+          title: 'Airavat Medical Assistant',
+          debugShowCheckedModeBanner: false,
+          theme: MedicalTheme.lightTheme,
+          darkTheme: MedicalTheme.darkTheme,
+          themeMode:
+              themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+          routerConfig: _router,
+        );
+      },
     );
   }
 }

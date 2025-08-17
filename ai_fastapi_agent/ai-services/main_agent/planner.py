@@ -1,11 +1,11 @@
 import os
 from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
+# from langchain_google_genai import ChatGoogleGenerativeAI
 from typing import Dict, Any, Optional
 from .firestore_service import FirestoreService
 
 load_dotenv()
-gemini_planner_llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-thinking-exp-01-21", google_api_key=os.getenv("GEMINI_API_KEY"))
+# gemini_planner_llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-thinking-exp-01-21", google_api_key=os.getenv("GEMINI_API_KEY"))
 
 async def generate_dynamic_plan(patient_id: str, 
                                 current_patient_context: Dict[str, Any], 
@@ -46,40 +46,40 @@ async def generate_dynamic_plan(patient_id: str,
     risk_notes = current_patient_context.get("risk_assessment", "N/A")
     therapy = current_patient_context.get("therapy", "N/A")
 
-    # 3. Construct the prompt, now including previous plan context and current query
-    prompt_parts = [
-        "You are a digital oncologist agent.",
-        f"Patient is on {therapy}. Current hemoglobin: {hemoglobin}. Clinical risk summary: {risk_notes}.",
-        "\nPREVIOUS PLAN:",
-        previous_plan_text,
-        "\n---NOW BASED ON THE ABOVE AND THE PATIENT'S CURRENT SITUATION---"
-    ]
-
-    if current_query_text:
-        prompt_parts.append(f"CURRENT PATIENT QUERY/SITUATION: {current_query_text}")
+    # 3. Create a simple fallback plan since langchain is not available
+    plan_text = f"""
+    **Treatment Plan for Patient {patient_id}**
     
-    prompt_parts.append(
-        """\nPlease create an UPDATED clinical plan. Focus on:
-1. Suggest immediate steps based on any new information or changes.
-2. Adjust timeline for next labs or imaging, if necessary.
-3. Provide a dietary reminder relevant to the current situation.
-4. Offer motivation for the patient, acknowledging their journey.
-
-Return in plain bullet points. If there was a previous plan, explicitly state if you are continuing, modifying, or replacing parts of it."""
-    )
+    Current Status:
+    - Hemoglobin: {hemoglobin}
+    - Therapy: {therapy}
+    - Risk Assessment: {risk_notes}
     
-    final_prompt = "\n".join(prompt_parts)
-    print(f"\nPlanner Prompt for {patient_id}:\n{final_prompt}\n")
-
-    # 4. Invoke the LLM
-    generated_plan_text = gemini_planner_llm.invoke(final_prompt).content # Get content from AIMessage
+    Immediate Steps:
+    • Continue current therapy as prescribed
+    • Monitor hemoglobin levels regularly
+    • Schedule follow-up appointment within 2 weeks
+    
+    Dietary Recommendations:
+    • Maintain iron-rich diet
+    • Stay hydrated
+    • Follow any specific dietary restrictions from your doctor
+    
+    Next Steps:
+    • Schedule next lab work in 2 weeks
+    • Contact your healthcare provider if symptoms worsen
+    • Keep a symptom diary
+    
+    Previous Plan Reference: {previous_plan_text[:100]}...
+    
+    Note: This is a basic plan. Please consult your healthcare provider for personalized medical advice.
+    """
 
     # 5. Prepare plan data for storage
-    # The structure stored can be flexible. Here, just storing the text.
     plan_output_data = {
-        "plan_text": generated_plan_text,
+        "plan_text": plan_text,
         "referenced_history_count": referenced_history_count,
-        "model_used": gemini_planner_llm.model_name # Storing which model was used
+        "model_used": "fallback_planner" # Storing which model was used
     }
 
     # 6. Store the new plan (asynchronously, but wait for it if its ID is needed immediately)

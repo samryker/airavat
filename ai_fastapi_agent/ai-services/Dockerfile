@@ -2,31 +2,42 @@
 FROM python:3.10-slim
 
 # Set environment variables
-# Prevents Python from writing pyc files to disc (equivalent to python -B)
-ENV PYTHONDONTWRITEBYTECODE 1
-# Prevents Python from buffering stdout and stderr (equivalent to python -u)
-ENV PYTHONUNBUFFERED 1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PORT=8000
 
 # Set the working directory in the container
 WORKDIR /app
 
-# Install pip requirements
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy requirements first to leverage Docker cache
-COPY requirements.txt ./
+COPY ai-services/requirements.txt .
+
+# Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy the application code into the working directory
-COPY ./main_agent ./main_agent
-COPY ./mcp_config.py ./
-COPY ./gunicorn.conf.py ./
-COPY ./airavat-a3a10-firebase-adminsdk-fbsvc-7b24d935c3.json ./
-COPY .env ./
+# Copy the application code
+COPY ai-services/ ./ai-services/
+COPY ai-services/mcp_config.py ./
+COPY ../firebase.json ./firebase.json
 
-# Expose the port Gunicorn will run on (Cloud Run will map this)
-# Cloud Run provides the PORT env var, Gunicorn will use it by default if not specified in CMD.
-EXPOSE 8080 
+# Create a non-root user for security
+RUN useradd --create-home --shell /bin/bash app && \
+    chown -R app:app /app
+USER app
 
-# Command to run the application using Gunicorn with our configuration
-# The gunicorn.conf.py sets the proper PYTHONPATH and other settings
-CMD gunicorn -c gunicorn.conf.py main_agent.main:app --bind 0.0.0.0:$PORT 
+# Expose the port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Command to run the application
+CMD ["gunicorn", "-c", "ai-services/gunicorn.conf.py", "ai-services.main_agent.main:app", "--bind", "0.0.0.0:8000"]

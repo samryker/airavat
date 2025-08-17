@@ -15,6 +15,30 @@
       border: 1px solid #aaa;
       border-radius: 4px;
     }
+    #debugPanel {
+      position: absolute;
+      top: 10px; right: 10px;
+      padding: 10px;
+      font-size: 12px;
+      z-index: 10;
+      background: rgba(0,0,0,0.8);
+      color: white;
+      border-radius: 4px;
+      max-width: 300px;
+    }
+    #debugPanel button {
+      margin: 2px;
+      padding: 4px 8px;
+      font-size: 10px;
+    }
+    .status {
+      margin: 5px 0;
+      padding: 2px 5px;
+      border-radius: 2px;
+    }
+    .status.success { background: rgba(0,255,0,0.3); }
+    .status.error { background: rgba(255,0,0,0.3); }
+    .status.loading { background: rgba(255,255,0,0.3); }
   </style>
 </head>
 <body>
@@ -28,14 +52,74 @@
     <option value="Femur">Femur</option>
   </select>
 
+  <!-- Debug Panel -->
+  <div id="debugPanel">
+    <h4>Debug Panel</h4>
+    <div id="status">Initializing...</div>
+    <button onclick="testSMPL()">Test SMPL API</button>
+    <button onclick="checkMode()">Check Mode</button>
+  </div>
+
   <!-- hook up the selector to our Three.js code -->
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       const sel = document.getElementById('organSelector');
-      sel.addEventListener('change', e => {
-        window.highlightOrgan(e.target.value);
-      });
+      if (sel) {
+        sel.addEventListener('change', e => {
+          if (window.highlightOrgan) {
+            window.highlightOrgan(e.target.value);
+          }
+        });
+      }
+      
+      // Update status after initialization
+      setTimeout(() => {
+        updateStatus();
+      }, 2000);
     });
+    
+    function updateStatus() {
+      const statusDiv = document.getElementById('status');
+      if (!statusDiv) return;
+      
+      const mode = window.getCurrentMode ? window.getCurrentMode() : { currentMesh: 'Unknown' };
+      statusDiv.innerHTML = `
+        <div class="status ${mode.currentMesh === 'SMPL' ? 'success' : 'loading'}">
+          Mode: ${mode.currentMesh}
+        </div>
+        <div class="status loading">
+          Mesh: ${mode.currentMesh === 'SMPL' ? 'Dynamic' : 'Static'}
+        </div>
+      `;
+    }
+    
+    async function testSMPL() {
+      const statusDiv = document.getElementById('status');
+      if (!statusDiv) return;
+      statusDiv.innerHTML = '<div class="status loading">Testing SMPL API...</div>';
+      
+      try {
+        const result = await window.testSMPLAPI();
+        if (result.success) {
+          statusDiv.innerHTML = '<div class="status success">SMPL API: Working ✅</div>';
+        } else {
+          statusDiv.innerHTML = '<div class="status error">SMPL API: Failed ❌</div>';
+        }
+      } catch (error) {
+        statusDiv.innerHTML = '<div class="status error">SMPL API: Error ❌</div>';
+      }
+    }
+    
+    function loadFallback() {
+      if (window.createFallbackModel) {
+        window.createFallbackModel();
+        updateStatus();
+      }
+    }
+    
+    function checkMode() {
+      updateStatus();
+    }
   </script>
 
   <!-- your module entrypoint -->

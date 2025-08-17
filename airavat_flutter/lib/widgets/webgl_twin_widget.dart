@@ -1,12 +1,19 @@
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 import 'dart:html' as html;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class WebGLTwinWidget extends StatefulWidget {
   final String? userId;
   final Map<String, dynamic>? userBiomarkers;
   final Function(String)? onOrganSelected;
   final String? modelUrl;
+  // New optional initial parameters to sync with the viewer
+  final String? initialGender; // 'male' | 'female' | 'neutral'
+  final double? initialHeightCm; // e.g., 170
+  final double? initialWeightKg; // e.g., 70
+  final double? initialBeta1; // 0..1
 
   const WebGLTwinWidget({
     Key? key,
@@ -14,6 +21,10 @@ class WebGLTwinWidget extends StatefulWidget {
     this.userBiomarkers,
     this.onOrganSelected,
     this.modelUrl,
+    this.initialGender,
+    this.initialHeightCm,
+    this.initialWeightKg,
+    this.initialBeta1,
   }) : super(key: key);
 
   @override
@@ -24,6 +35,7 @@ class _WebGLTwinWidgetState extends State<WebGLTwinWidget> {
   final String _viewId =
       'threejs-viewer-${DateTime.now().millisecondsSinceEpoch}';
   bool _isWeb = false;
+  html.IFrameElement? _iframeRef;
 
   @override
   void initState() {
@@ -31,10 +43,20 @@ class _WebGLTwinWidgetState extends State<WebGLTwinWidget> {
     _initializeWebView();
   }
 
+  @override
+  void didUpdateWidget(covariant WebGLTwinWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // If initial parameters change, push update to iframe
+    _postSmplUpdate(
+      gender: widget.initialGender,
+      height: widget.initialHeightCm,
+      weight: widget.initialWeightKg,
+      beta1: widget.initialBeta1,
+    );
+  }
+
   void _initializeWebView() {
-    // Check if running on web
     try {
-      // ignore: unnecessary_null_comparison
       if (html.window != null) {
         _isWeb = true;
         _registerViewFactory();
@@ -49,9 +71,13 @@ class _WebGLTwinWidgetState extends State<WebGLTwinWidget> {
     ui.platformViewRegistry.registerViewFactory(
       _viewId,
       (int viewId) {
-        final url = widget.modelUrl ?? '/models/male.obj';
+        final urlParam =
+            (widget.modelUrl != null && widget.modelUrl!.isNotEmpty)
+                ? '?modelUrl=${widget.modelUrl}'
+                : '';
         final html.IFrameElement iframe = html.IFrameElement()
-          ..src = '/viewer/index.html?modelUrl=$url'
+          ..id = 'airavat-twin-iframe'
+          ..src = '/viewer/index.html$urlParam'
           ..style.border = 'none'
           ..style.width = '100%'
           ..style.height = '100%'
@@ -61,18 +87,97 @@ class _WebGLTwinWidgetState extends State<WebGLTwinWidget> {
               'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture'
           ..allowFullscreen = true;
 
-        // Add message listener for communication between Flutter and 3D viewer
-        html.window.addEventListener('message', (event) {
+        // Store ref for messaging
+        _iframeRef = iframe;
+
+        // Post initial parameters once iframe loads
+        iframe.onLoad.listen((_) async {
+          _postSmplUpdate(
+            gender: widget.initialGender,
+            height: widget.initialHeightCm,
+            weight: widget.initialWeightKg,
+            beta1: widget.initialBeta1,
+          );
+          // If no initial gender provided, load saved model from Firestore
+          if (widget.initialGender == null || widget.initialGender!.isEmpty) {
+            await _loadSavedModelAndPost();
+          }
+        });
+
+        // Listener for communication from viewer
+        html.window.addEventListener('message', (event) async {
           final messageEvent = event as html.MessageEvent;
-          if (messageEvent.data is Map &&
-              messageEvent.data['type'] == 'organSelected') {
-            widget.onOrganSelected?.call(messageEvent.data['organ']);
+          final data = messageEvent.data;
+          if (data is Map && data['type'] == 'organSelected') {
+            widget.onOrganSelected?.call(data['organ']);
+          }
+          if (data is Map && data['type'] == 'smpl:model_changed') {
+            final model = (data['model'] as String?)?.toLowerCase();
+            if (model == 'male' || model == 'female' || model == 'neutral') {
+              await _persistModelSelection(model!);
+            }
           }
         });
 
         return iframe;
       },
     );
+  }
+
+  Future<void> _loadSavedModelAndPost() async {
+    try {
+      final userId = widget.userId ?? FirebaseAuth.instance.currentUser?.uid;
+      if (userId == null) return;
+      final doc = await FirebaseFirestore.instance
+          .collection('patients')
+          .doc(userId)
+          .get();
+      if (doc.exists) {
+        final data = doc.data();
+        final profile = (data?['profile'] ?? {}) as Map<String, dynamic>;
+        final saved = (profile['smpl_model'] ?? data?['smpl_model'])
+            ?.toString()
+            .toLowerCase();
+        final model =
+            (saved == 'male' || saved == 'female' || saved == 'neutral')
+                ? saved
+                : null;
+        if (model != null) {
+          _postSmplUpdate(gender: model);
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _persistModelSelection(String model) async {
+    try {
+      final userId = widget.userId ?? FirebaseAuth.instance.currentUser?.uid;
+      if (userId == null) return;
+      await FirebaseFirestore.instance.collection('patients').doc(userId).set({
+        'profile': {'smpl_model': model}
+      }, SetOptions(merge: true));
+    } catch (_) {}
+  }
+
+  void _postSmplUpdate({
+    String? gender,
+    double? height,
+    double? weight,
+    double? beta1,
+  }) {
+    if (_iframeRef?.contentWindow == null) return;
+    final payload = <String, dynamic>{};
+    if (gender != null && gender.isNotEmpty)
+      payload['gender'] = gender.toLowerCase();
+    if (height != null) payload['height'] = height;
+    if (weight != null) payload['weight'] = weight;
+    if (beta1 != null) payload['beta1'] = beta1;
+    if (payload.isEmpty) return;
+
+    _iframeRef!.contentWindow!.postMessage({
+      'type': 'smpl:update',
+      'payload': payload,
+    }, '*');
   }
 
   @override
@@ -113,7 +218,7 @@ class _WebGLTwinWidgetState extends State<WebGLTwinWidget> {
             // 3D Viewer
             HtmlElementView(viewType: _viewId),
 
-            // Overlay for better visual integration
+            // Overlay
             Positioned(
               top: 0,
               left: 0,
@@ -132,7 +237,6 @@ class _WebGLTwinWidgetState extends State<WebGLTwinWidget> {
               ),
             ),
 
-            // Loading indicator
             if (widget.userId == null)
               Container(
                 color: Colors.black.withOpacity(0.7),
@@ -222,53 +326,6 @@ class _WebGLTwinWidgetState extends State<WebGLTwinWidget> {
                 ),
                 textAlign: TextAlign.center,
               ),
-              SizedBox(height: 16),
-              if (widget.userId != null)
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: theme.primaryColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: theme.primaryColor.withOpacity(0.3),
-                    ),
-                  ),
-                  child: Text(
-                    'User ID: ${widget.userId!.substring(0, 8)}...',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.primaryColor,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              SizedBox(height: 24),
-              Container(
-                padding: EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: theme.colorScheme.outline.withOpacity(0.2),
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    Icon(
-                      Icons.info_outline,
-                      color: theme.colorScheme.primary,
-                      size: 20,
-                    ),
-                    SizedBox(height: 8),
-                    Text(
-                      'Open in web browser for full 3D experience',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurface.withOpacity(0.6),
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
             ],
           ),
         ),
@@ -277,7 +334,6 @@ class _WebGLTwinWidgetState extends State<WebGLTwinWidget> {
   }
 }
 
-// Helper class for 3D twin customization
 class TwinCustomization {
   final String userId;
   final Map<String, dynamic> biomarkers;
