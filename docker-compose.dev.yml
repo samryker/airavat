@@ -4,7 +4,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - GEMINI_API_KEY=AIzaSyA6-htKUEfITYCEesRPr7fazINbMFxFNv8
+      - GEMINI_API_KEY=
     volumes:
       - ./ai_fastapi_agent/ai-services/.env:/app/ai-services/.env:ro
 

@@ -14,6 +14,12 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# Disable Gemini for security reasons
+logger.warning("Gemini API disabled for security reasons - API key removed")
+
+# Initialize Gemini client (disabled)
+model = None
+
 # Try to import MCP dependencies, but handle gracefully if not available
 try:
     from langchain_google_alloydb_pg import AlloyDBEngine
@@ -45,20 +51,10 @@ except ImportError:
 from .data_models import PatientQuery, AgentResponse, TreatmentSuggestion
 from .firestore_service import FirestoreService
 
-# Initialize Gemini
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# Initialize Gemini (DISABLED for security)
+# GEMINI_API_KEY removed for security reasons
 gemini_model = None
-
-if GEMINI_API_KEY:
-    try:
-        genai.configure(api_key=GEMINI_API_KEY)
-        gemini_model = genai.GenerativeModel('gemini-1.5-pro')
-        print("✅ Gemini model initialized successfully")
-    except Exception as e:
-        print(f"❌ Error initializing Gemini: {e}")
-        gemini_model = None
-else:
-    print("⚠️ GEMINI_API_KEY not found. Using fallback responses.")
+print("⚠️ Gemini API disabled for security reasons. Using fallback responses.")
 
 # Message classes for compatibility
 class HumanMessage:

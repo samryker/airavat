@@ -31,7 +31,7 @@ This guide explains the new unified deployment system that automatically handles
 ./ai_fastapi_agent/deploy_complete_with_env.sh
 ```
 **What it does:**
-- ✅ Reads GEMINI_API_KEY from `.env` file
+- ✅ Gemini API disabled for security (no API key required)
 - ✅ Sets environment variables in Cloud Run
 - ✅ Deploys backend with proper configuration
 - ✅ Tests the deployment
@@ -101,7 +101,7 @@ This will test:
 ## 🔑 Environment Variables
 
 The system automatically handles:
-- **GEMINI_API_KEY**: Read from `ai-services/main_agent/.env`
+- **GEMINI API**: Disabled for security reasons
 - **Backend URL**: Automatically detected and configured
 - **Firebase Configuration**: Handled by Firebase CLI
 
@@ -147,7 +147,7 @@ airavat/
    ```
    ❌ .env file not found at ai-services/main_agent/.env
    ```
-   **Solution:** Create the `.env` file with your `GEMINI_API_KEY`
+   **Solution:** API key requirements have been removed for security
 
 4. **Flutter not installed**
    ```
@@ -195,7 +195,7 @@ If you encounter issues:
 1. Check the error messages in the deployment output
 2. Run the test scripts to identify the problem
 3. Check that all prerequisites are met
-4. Verify your `.env` file has the correct `GEMINI_API_KEY`
+4. Note: API key requirements have been removed for security
 
 ## 🎯 Success Indicators
 
@@ -206,7 +206,7 @@ After successful deployment, you should see:
 =================================
 ✅ Backend URL: https://airavat-backend-xxx.run.app
 ✅ Frontend URL: https://airavat-a3a10.web.app
-✅ GEMINI_API_KEY: Set and working
+✅ GEMINI API: Disabled for security
 ✅ AI Chatbot: Working with intelligent responses
 ✅ Context History: Working
 ✅ All endpoints: Functional

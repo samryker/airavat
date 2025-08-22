@@ -295,23 +295,50 @@ async def update_treatment_plan(plan_update: TreatmentPlanUpdate):
 
 @app.get("/health")
 async def health_check():
-    """
-    Health check endpoint to verify the API is running and check service status.
-    """
-    health_status = {
-        "status": "healthy",
-        "timestamp": "2024-01-01T00:00:00Z",  # You can add actual timestamp logic
-        "services": {
-            "firestore": "available" if medical_agent.db else "unavailable",
-            "mcp_agent": "available" if medical_agent.mcp_agent else "unavailable",
-            "mcp_database": "available" if mcp_db_engine else "unavailable"
-        },
-        "mcp_config": {
-            "available": mcp_config.is_ready(),
-            "db_type": os.getenv("MCP_DB_TYPE", "not_set")
+    """Health check endpoint for AWS load balancer and monitoring"""
+    try:
+        # Basic health checks
+        health_status = {
+            "status": "healthy",
+            "timestamp": datetime.utcnow().isoformat(),
+            "version": "1.0.0",
+            "environment": "aws-production",
+            "services": {
+                "database": "unknown",
+                "notification_service": False,
+                "email_service": False
+            }
         }
-    }
-    return health_status
+        
+        # Check database connection (Firestore)
+        try:
+            if medical_agent and medical_agent.db:
+                # Simple test query
+                test_collection = medical_agent.db.collection('health_check')
+                test_doc = test_collection.document('test')
+                test_doc.set({'timestamp': datetime.utcnow()})
+                health_status["services"]["database"] = "healthy"
+            else:
+                health_status["services"]["database"] = "unavailable"
+        except Exception as e:
+            health_status["services"]["database"] = f"error: {str(e)}"
+        
+        # Check notification service
+        if medical_agent and medical_agent.notification_service:
+            health_status["services"]["notification_service"] = True
+        
+        # Check email service
+        if medical_agent and medical_agent.email_service:
+            health_status["services"]["email_service"] = True
+        
+        return health_status
+        
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "timestamp": datetime.utcnow().isoformat(),
+            "error": str(e)
+        }
 
 @app.get("/")
 async def read_root():
@@ -913,10 +940,10 @@ async def update_user_profile(user_id: str, profile_data: dict):
 @app.post("/files/analyze")
 async def analyze_file(file: UploadFile = File(...)):
     try:
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
-        genai.configure(api_key=api_key)
+        # api_key = os.getenv("GEMINI_API_KEY") # Removed GEMINI_API_KEY check
+        # if not api_key:
+        #     raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
+        # genai.configure(api_key=api_key) # Removed genai.configure
 
         # Read file bytes
         content = await file.read()
@@ -965,6 +992,15 @@ async def analyze_file(file: UploadFile = File(...)):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"File analysis failed: {e}")
+
+@app.get("/agent/check_gemini_config")
+async def check_gemini_config():
+    """Check if Gemini API is properly configured (DISABLED)"""
+    return {
+        "gemini_configured": False,
+        "message": "Gemini API service has been disabled for security reasons",
+        "status": "disabled"
+    }
 
 # To run this app directly (for development):
 # uvicorn ai_fastapi_agent.ai-services.main_agent.main:app --reload

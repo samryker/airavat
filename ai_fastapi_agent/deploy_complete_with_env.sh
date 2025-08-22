@@ -41,26 +41,19 @@ fi
 
 print_success "✅ Found main.py - we're in the right directory"
 
-# Step 2: Check if .env file exists
+# Step 2: Check if .env file exists (API key requirements removed)
 if [ ! -f "ai-services/.env" ]; then
-    print_error "❌ .env file not found at ai-services/.env"
-    print_warning "Please create the .env file with your GEMINI_API_KEY"
-    exit 1
+    print_warning "❌ .env file not found at ai-services/.env"
+    print_warning "Creating minimal .env file (API keys removed for security)"
+    echo "SMPL_ASSETS_BASE_URL=https://storage.googleapis.com/airavat-mira-models/models" > ai-services/.env
 fi
 
-print_success "✅ Found .env file"
+print_success "✅ Environment file ready"
 
-# Step 3: Read GEMINI_API_KEY from .env file
-print_status "Step 1: Reading GEMINI_API_KEY from .env file..."
-GEMINI_API_KEY=$(grep "GEMINI_API_KEY=" ai-services/.env | cut -d '=' -f2)
+# Step 3: Continue without API key requirements (security measure)
+print_status "Step 1: Proceeding with deployment (API key requirements removed for security)..."
 
-if [ -z "$GEMINI_API_KEY" ]; then
-    print_error "❌ GEMINI_API_KEY not found in .env file"
-    exit 1
-fi
-
-print_success "✅ Found GEMINI_API_KEY in .env file"
-print_status "API Key: ${GEMINI_API_KEY:0:10}..."
+print_success "✅ Deployment proceeding without API key requirements"
 
 # Step 4: Check if Docker is running
 print_status "Step 2: Checking Docker status..."
@@ -93,7 +86,7 @@ gcloud run deploy airavat-backend \
     --timeout=300 \
     --concurrency=80 \
     --max-instances=10 \
-    --set-env-vars GEMINI_API_KEY="$GEMINI_API_KEY" \
+    --set-env-vars GEMINI_DISABLED=true \
     --quiet
 
 if [ $? -eq 0 ]; then
@@ -170,7 +163,7 @@ echo "✅ Notification system"
 echo "✅ Feedback processing"
 echo ""
 echo "🔧 Environment Variables:"
-echo "✅ GEMINI_API_KEY: Set and working"
+echo "✅ GEMINI API: Disabled for security"
 echo ""
 echo "🚀 Next Steps:"
 echo "1. Test the frontend at: https://airavat-a3a10.web.app"

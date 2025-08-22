@@ -5,7 +5,8 @@ from typing import Dict, Any, Optional
 from .firestore_service import FirestoreService
 
 load_dotenv()
-# gemini_planner_llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-thinking-exp-01-21", google_api_key=os.getenv("GEMINI_API_KEY"))
+# Gemini LLM removed for security reasons
+# gemini_planner_llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-thinking-exp-01-21")  # API key removed
 
 async def generate_dynamic_plan(patient_id: str, 
                                 current_patient_context: Dict[str, Any], 

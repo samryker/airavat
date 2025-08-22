@@ -34,17 +34,6 @@ class MedicalAgent:
         self.mcp_agent = mcp_agent
         self.patient_rl_agents: Dict[str, PatientRLAgent] = {} # Cache for RL agents
         
-        # Initialize Gemini for dynamic suggestions
-        load_dotenv()
-        gemini_api_key = os.getenv("GEMINI_API_KEY")
-        if gemini_api_key:
-            genai.configure(api_key=gemini_api_key)
-            self.model = genai.GenerativeModel('gemini-1.5-pro')
-            logger.info("Gemini model initialized for dynamic suggestions.")
-        else:
-            self.model = None
-            logger.warning("GEMINI_API_KEY not found. Dynamic suggestions will use fallback.")
-        
         # Initialize services
         if self.db:
             logger.info("MedicalAgent initialized with Firestore client.")
@@ -325,53 +314,7 @@ class MedicalAgent:
         Generate dynamic suggestions based on Gemini's response and the actual query content
         """
         try:
-            if not hasattr(self, 'model') or not self.model:
-                # Fallback to basic suggestions if Gemini is not available
-                return self._generate_fallback_suggestions(original_query)
-            
-            # Create a prompt for Gemini to generate suggestions based on the response
-            suggestion_prompt = f"""
-            Based on this medical response and the patient's query, generate 3-5 actionable suggestions.
-            
-            Patient Query: "{original_query}"
-            AI Response: "{response_text}"
-            
-            Generate suggestions that are:
-            1. Relevant to the specific query and response
-            2. Actionable and practical
-            3. Appropriate for the patient's context
-            4. Include confidence scores (0.0-1.0)
-            
-            Return as JSON array with format:
-            [
-                {{
-                    "suggestion_text": "specific actionable suggestion",
-                    "confidence_score": 0.8
-                }}
-            ]
-            
-            Focus on the actual content of the query and response, not generic patterns.
-            """
-            
-            # Get suggestions from Gemini
-            response = self.model.generate_content(suggestion_prompt)
-            
-            try:
-                import json
-                suggestions_data = json.loads(response.text)
-                if isinstance(suggestions_data, list):
-                    return [
-                        TreatmentSuggestion(
-                            suggestion_text=item.get("suggestion_text", ""),
-                            confidence_score=item.get("confidence_score", 0.7)
-                        )
-                        for item in suggestions_data
-                        if item.get("suggestion_text")
-                    ]
-            except (json.JSONDecodeError, KeyError) as e:
-                logger.warning(f"Error parsing Gemini suggestions: {e}")
-            
-            # Fallback if JSON parsing fails
+            # Fallback to basic suggestions if Gemini is not available
             return self._generate_fallback_suggestions(original_query)
             
         except Exception as e:
@@ -1017,7 +960,5 @@ class MedicalAgent:
 
 # if __name__ == '__main__':
 #     import asyncio
-#     # Ensure you have a .env file with GEMINI_API_KEY and firebase service account setup
-#     # to run this example directly with Firestore integration.
 #     # You would also need to initialize firebase_admin in this scope if not done by FastAPI startup.
 #     asyncio.run(example_usage()) 

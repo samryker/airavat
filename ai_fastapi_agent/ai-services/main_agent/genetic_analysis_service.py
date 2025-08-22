@@ -105,14 +105,9 @@ class GeneticAnalysisService:
             self.storage_client = None
             self.bucket = None
         
-        # Initialize Gemini for analysis
-        gemini_api_key = os.getenv("GEMINI_API_KEY")
-        if gemini_api_key:
-            genai.configure(api_key=gemini_api_key)
-            self.model = genai.GenerativeModel('gemini-1.5-pro')
-        else:
-            self.model = None
-            logger.warning("GEMINI_API_KEY not found. Genetic analysis will be limited.")
+        # Initialize Gemini for analysis (disabled for security)
+        self.model = None
+        logger.warning("Gemini API disabled for security. Genetic analysis will use fallback responses.")
     
     async def upload_genetic_report(self, user_id: str, file_data: bytes, 
                                   filename: str, report_type: str = "unknown") -> str:

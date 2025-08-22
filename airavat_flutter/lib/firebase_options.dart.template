@@ -1,0 +1,28 @@
+import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform, kIsWeb;
+
+/// TEMPLATE: Replace with your NEW Firebase project configuration
+/// Get this from: https://console.firebase.google.com -> Project Settings -> Web Apps
+class DefaultFirebaseOptions {
+  static FirebaseOptions get currentPlatform {
+    if (kIsWeb) {
+      return FirebaseOptions(
+        apiKey: 'YOUR_NEW_FIREBASE_API_KEY',
+        authDomain: 'YOUR_NEW_PROJECT_ID.firebaseapp.com',
+        projectId: 'YOUR_NEW_PROJECT_ID',
+        storageBucket: 'YOUR_NEW_PROJECT_ID.appspot.com',
+        messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
+        appId: 'YOUR_APP_ID',
+        measurementId: 'YOUR_MEASUREMENT_ID',
+      );
+    }
+    throw UnsupportedError('DefaultFirebaseOptions only supported on web.');
+  }
+}
+
+/// 🚨 SECURITY NOTICE:
+/// 1. Replace ALL placeholder values with your NEW Firebase project configuration
+/// 2. This file contains public identifiers only - no sensitive keys
+/// 3. Firebase rules control actual access, not these identifiers
+/// 4. After updating, rename this file to firebase_options.dart 

@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  airavat-backend:
+    build:
+      context: ..
+      dockerfile: aws-deployment/Dockerfile.optimized
+    ports:
+      - "8000:8000"
+    environment:
+      # Environment variables loaded from AWS Secrets Manager or .env
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
+      - FIREBASE_SERVICE_ACCOUNT_BASE64=${FIREBASE_SERVICE_ACCOUNT_BASE64}
+      - SMPL_ASSETS_BASE_URL=${SMPL_ASSETS_BASE_URL}
+      - GEMINI_DISABLED=true
+      # Database configuration
+      - DB_HOST=${DB_HOST:-localhost}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_NAME=${DB_NAME:-airavat}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      # Email configuration
+      - SMTP_SERVER=${SMTP_SERVER}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - EMAIL_FROM=${EMAIL_FROM}
+    volumes:
+      - logs:/home/airavat/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: awslogs
+      options:
+        awslogs-group: "/aws/ecs/airavat-backend"
+        awslogs-region: ${AWS_DEFAULT_REGION:-us-east-1}
+        awslogs-stream-prefix: "ecs"
+
+  # Optional: Local PostgreSQL for development
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME:-airavat}
+      POSTGRES_USER: ${DB_USER:-airavat}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    profiles:
+      - development
+
+  # Optional: Redis for caching
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    profiles:
+      - development
+
+volumes:
+  logs:
+  postgres_data:
+  redis_data:
+
+networks:
+  default:
+    name: airavat-network 
