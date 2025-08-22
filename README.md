@@ -2,7 +2,7 @@
 
 ## 🚨 **URGENT SECURITY NOTICE**
 
-**API keys have been compromised and are causing unauthorized billing charges! This project is being migrated to a new secure infrastructure. See [SECURITY_MIGRATION_GUIDE.md](SECURITY_MIGRATION_GUIDE.md) for immediate action steps.**
+**API keys can be compromised and can cause unauthorized billing for different services! . See [SECURITY_MIGRATION_GUIDE.md](SECURITY_MIGRATION_GUIDE.md) for immediate action steps.**
 
 ---
 
