@@ -1,25 +1,36 @@
-const { onRequest } = require("firebase-functions/v2/https");
-const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
-const admin = require("firebase-admin");
-admin.initializeApp();
+const functions = require("firebase-functions");
 
-// Trigger when new biomarker report is added
-exports.onNewReport = onDocumentCreated('biomarkers/{patientId}/reports/{reportId}', async (event) => {
-  const newData = event.data;
-  const patientId = event.params.patientId;
+const SMPL_API_BASE = "https://airavat-backend-u3hyo7liyq-uc.a.run.app";
 
-  // Sample logic: if hemoglobin < 9.5, create alert
-  if (newData.hemoglobin < 9.5) {
-    await admin.firestore()
-      .collection('alerts')
-      .doc(patientId)
-      .set({
-        alertType: "Low Hemoglobin",
-        value: newData.hemoglobin,
-        timestamp: admin.firestore.FieldValue.serverTimestamp()
-      });
+async function doFetch(url, options) {
+  const { default: fetch } = await import("node-fetch");
+  return fetch(url, options);
+}
+
+exports.smpl = functions.https.onRequest(async (req, res) => {
+  res.set("Access-Control-Allow-Origin", "*");
+  res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (req.method === "OPTIONS") {
+    return res.status(204).send("");
   }
 
-  return null;
+  try {
+    const targetUrl = `${SMPL_API_BASE}${req.url}`;
+
+    const upstream = await doFetch(targetUrl, {
+      method: req.method,
+      headers: { "Content-Type": req.get("Content-Type") || "application/json" },
+      body: ["GET", "HEAD"].includes(req.method) ? undefined : JSON.stringify(req.body),
+    });
+
+    const contentType = upstream.headers.get("content-type") || "application/json";
+    res.set("Content-Type", contentType);
+    const buffer = await upstream.arrayBuffer();
+    res.status(upstream.status).send(Buffer.from(buffer));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Proxy error", details: String(err) });
+  }
 });
 

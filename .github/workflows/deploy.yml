@@ -1,0 +1,122 @@
+name: deploy-all
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+env:
+  REGION: us-central1
+  GCP_PROJECT_ID: mira-470320
+  FIREBASE_PROJECT_ID: mira-d303d
+  ARTIFACT_REGISTRY_REPO: airavat
+  SERVICE_NAME: airavat-backend
+  WIF_PROVIDER: projects/10892877764/locations/global/workloadIdentityPools/github/providers/github-provider
+  BACKEND_SERVICE_ACCOUNT: github-actions-deployer@mira-470320.iam.gserviceaccount.com
+  FRONTEND_SERVICE_ACCOUNT: firebase-deployer@mira-d303d.iam.gserviceaccount.com
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      backend_url: ${{ steps.geturl.outputs.backend_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Auth with Workload Identity Federation (GCP)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.BACKEND_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Configure Docker auth for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build Docker image
+        run: |
+          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+          docker build -t "$IMAGE" -f ai_fastapi_agent/Dockerfile ai_fastapi_agent
+
+      - name: Push Docker image
+        run: docker push "$IMAGE"
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --image="$IMAGE" \
+            --allow-unauthenticated \
+            --cpu=0.5 \
+            --memory=512Mi \
+            --concurrency=80 \
+            --min-instances=0 \
+            --max-instances=2 \
+            --timeout=120 \
+            --set-env-vars=GEMINI_DISABLED=true
+
+      - name: Get service URL
+        id: geturl
+        run: |
+          URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format='value(status.url)')
+          echo "backend_url=$URL" >> $GITHUB_OUTPUT
+          echo "BACKEND_URL=$URL" >> $GITHUB_ENV
+
+      - name: Print backend URL
+        run: |
+          echo "Backend URL: $BACKEND_URL"
+
+  frontend:
+    runs-on: ubuntu-latest
+    needs: backend
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      BACKEND_URL: ${{ needs.backend.outputs.backend_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Auth with Workload Identity Federation (Firebase project)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.FRONTEND_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.FIREBASE_PROJECT_ID }}
+
+      - name: Inject backend URL into Flutter config
+        run: |
+          perl -0777 -pe "s|static const String baseUrl = ['\"](.+?)['\"];|static const String baseUrl = '$BACKEND_URL';|g" -i airavat_flutter/lib/config/backend_config.dart
+          perl -0777 -pe "s|const SMPL_API_BASE = (.+);|const SMPL_API_BASE = '$BACKEND_URL';|g" -i airavat_flutter/web/viewer/index.html
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Build Flutter web
+        working-directory: airavat_flutter
+        run: flutter build web --release --pwa-strategy=none
+
+      - name: Install Firebase CLI
+        run: npm i -g firebase-tools
+
+      - name: Export access token for Firebase CLI
+        run: echo "FIREBASE_TOKEN=$(gcloud auth print-access-token)" >> $GITHUB_ENV
+
+      - name: Deploy to Firebase Hosting
+        run: firebase deploy --only hosting --project $FIREBASE_PROJECT_ID --non-interactive --token "$FIREBASE_TOKEN" 

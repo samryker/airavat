@@ -71,3 +71,6 @@ node_modules/
 *.log
 *.txt
 **/.DS_Store
+
+# Ignore local SA key
+gcp-deployer.json

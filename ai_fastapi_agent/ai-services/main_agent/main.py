@@ -68,14 +68,8 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://airavat-a3a10.web.app",  # Firebase hosting domain
-        "https://airavat-a3a10.firebaseapp.com",  # Alternative Firebase domain
-        "http://localhost:3000",  # Local development
-        "http://localhost:3001",  # Local development
-        "http://127.0.0.1:3000",  # Local development
-        "http://127.0.0.1:3001",  # Local development
-    ],
+    allow_origins=[],
+    allow_origin_regex=r"^(https?:\/\/(localhost(:\d+)?|127\.0\.0\.1(:\d+)?))$|^(https:\/\/[a-zA-Z0-9-]+\.web\.app)$|^(https:\/\/[a-zA-Z0-9-]+\.firebaseapp\.com)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

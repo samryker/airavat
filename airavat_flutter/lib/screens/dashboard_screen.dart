@@ -301,50 +301,88 @@ class _DashboardScreenState extends State<DashboardScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final Size _screenSize = MediaQuery.of(context).size;
+    final bool _isMobile = _screenSize.width < 768;
 
-    return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      body: Row(
-        children: [
-          // Left Sidebar
-          _buildSidebar(context, isDark),
-
-          // Main Content
-          Expanded(
-            child: Column(
-              children: [
-                // Top Header
-                _buildTopHeader(context, isDark),
-
-                // Main Dashboard Content
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24.0),
-                    child: Row(
-                      children: [
-                        // Left Column - Organ Overview
-                        Expanded(
-                          flex: 2,
-                          child: _buildOrganOverview(context, isDark),
-                        ),
-
-                        const SizedBox(width: 24),
-
-                        // Right Column - Metrics & Appointments
-                        Expanded(
-                          flex: 1,
-                          child: _buildRightColumn(context, isDark),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+    if (_isMobile) {
+      return Scaffold(
+        backgroundColor: theme.scaffoldBackgroundColor,
+        appBar: _buildMobileAppBar(context, isDark),
+        drawer: _buildMobileDrawer(context, isDark),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildOrganOverview(context, isDark),
+                  const SizedBox(height: 24),
+                  _buildTreatmentHistoryHeader(
+                      Theme.of(context).textTheme, theme),
+                  const SizedBox(height: 12),
+                  _buildMobileTreatmentHistory(context, isDark),
+                  const SizedBox(height: 24),
+                  _buildSectionTitle(
+                      'Medical Metrics', Theme.of(context).textTheme, theme),
+                  const SizedBox(height: 12),
+                  _buildMobileMetricsList(context, isDark),
+                  const SizedBox(height: 24),
+                  _buildSectionTitle(
+                      'Tasks & Reminders', Theme.of(context).textTheme, theme),
+                  const SizedBox(height: 12),
+                  _buildMobileNotifications(context, isDark),
+                ],
+              ),
             ),
           ),
-        ],
-      ),
-    );
+        ),
+      );
+    } else {
+      return Scaffold(
+        backgroundColor: theme.scaffoldBackgroundColor,
+        body: Row(
+          children: [
+            // Left Sidebar
+            _buildSidebar(context, isDark),
+
+            // Main Content
+            Expanded(
+              child: Column(
+                children: [
+                  // Top Header
+                  _buildTopHeader(context, isDark),
+
+                  // Main Dashboard Content
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Row(
+                        children: [
+                          // Left Column - Organ Overview
+                          Expanded(
+                            flex: 2,
+                            child: _buildOrganOverview(context, isDark),
+                          ),
+
+                          const SizedBox(width: 24),
+
+                          // Right Column - Metrics & Appointments
+                          Expanded(
+                            flex: 1,
+                            child: _buildRightColumn(context, isDark),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   Widget _buildSidebar(BuildContext context, bool isDark) {
@@ -489,7 +527,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         _buildSectionTitle('Organ Overview', textTheme, theme),
         SizedBox(height: 16),
         Container(
-          height: isMobile ? screenSize.height * 0.3 : screenSize.height * 0.4,
+          height: isMobile ? 260 : screenSize.height * 0.4,
           child: WebGLTwinWidget(
             userId: _currentUserId,
             userBiomarkers: _userBiomarkers,
@@ -502,139 +540,11 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
         ),
         SizedBox(height: 20),
-        _buildTreatmentHistoryHeader(textTheme, theme),
-        SizedBox(height: 16),
-        Expanded(
-          child: _isLoadingTreatments
-              ? Center(
-                  child: CircularProgressIndicator(
-                    color: theme.primaryColor,
-                  ),
-                )
-              : _treatmentHistory.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.history,
-                            size: 48,
-                            color: theme.colorScheme.onSurface.withOpacity(0.5),
-                          ),
-                          SizedBox(height: 16),
-                          Text(
-                            'No treatment history yet',
-                            style: textTheme.bodyMedium?.copyWith(
-                              color:
-                                  theme.colorScheme.onSurface.withOpacity(0.7),
-                            ),
-                          ),
-                          SizedBox(height: 8),
-                          Text(
-                            'Start chatting with your AI assistant to build your medical history',
-                            style: textTheme.bodySmall?.copyWith(
-                              color:
-                                  theme.colorScheme.onSurface.withOpacity(0.5),
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
-                    )
-                  : ListView.builder(
-                      itemCount: _treatmentHistory.length,
-                      itemBuilder: (context, index) {
-                        final treatment = _treatmentHistory[index];
-                        final timestamp =
-                            DateTime.parse(treatment['timestamp']);
-                        final timeAgo = _getTimeAgo(timestamp);
-
-                        final isLatest = treatment['is_latest'] == true;
-
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8.0),
-                          child: Card(
-                            elevation: isLatest ? 6 : 2,
-                            color: isLatest
-                                ? theme.primaryColor.withOpacity(0.05)
-                                : null,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              side: isLatest
-                                  ? BorderSide(
-                                      color:
-                                          theme.primaryColor.withOpacity(0.3),
-                                      width: 2,
-                                    )
-                                  : BorderSide.none,
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(12.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        isLatest
-                                            ? Icons.star
-                                            : Icons.medical_services,
-                                        size: 16,
-                                        color: isLatest
-                                            ? Colors.amber
-                                            : theme.primaryColor,
-                                      ),
-                                      SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          isLatest
-                                              ? 'Latest Treatment - $timeAgo'
-                                              : timeAgo,
-                                          style: textTheme.bodySmall?.copyWith(
-                                            color: isLatest
-                                                ? Colors.amber.shade700
-                                                : theme.primaryColor,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                      if (isLatest)
-                                        Container(
-                                          padding: EdgeInsets.symmetric(
-                                              horizontal: 8, vertical: 4),
-                                          decoration: BoxDecoration(
-                                            color: Colors.amber,
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                          ),
-                                          child: Text(
-                                            'LATEST',
-                                            style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                  SizedBox(height: 8),
-                                  Text(
-                                    treatment['text'].length > 100
-                                        ? '${treatment['text'].substring(0, 100)}...'
-                                        : treatment['text'],
-                                    style: textTheme.bodySmall?.copyWith(
-                                      height: 1.4,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-        ),
+        if (!isMobile) ...[
+          _buildTreatmentHistoryHeader(textTheme, theme),
+          SizedBox(height: 16),
+          Expanded(child: _buildDesktopTreatmentHistoryList(context, isDark)),
+        ],
       ],
     );
   }
@@ -650,235 +560,12 @@ class _DashboardScreenState extends State<DashboardScreen>
       children: [
         _buildSectionTitle('Medical Metrics', textTheme, theme),
         SizedBox(height: 16),
-        Expanded(
-          child: ListView.builder(
-            itemCount: _organSystems.length,
-            itemBuilder: (context, index) {
-              final organ = _organSystems[index];
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8.0),
-                child: Card(
-                  elevation: 2,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: InkWell(
-                    onTap: () => _showPremiumDialog(context, organ),
-                    borderRadius: BorderRadius.circular(12),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12.0),
-                      child: Row(
-                        children: [
-                          _getOrganIcon(organ),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              organ,
-                              style: textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          Container(
-                            padding: EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.amber.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.amber),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.star,
-                                  size: 14,
-                                  color: Colors.amber,
-                                ),
-                                SizedBox(width: 4),
-                                Text(
-                                  'Premium',
-                                  style: textTheme.bodySmall?.copyWith(
-                                    color: Colors.amber.shade700,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
+        if (!isMobile) Expanded(child: _buildMetricsListView(context, isDark)),
         SizedBox(height: 20),
         _buildSectionTitle('Tasks & Reminders', textTheme, theme),
         SizedBox(height: 16),
-        Expanded(
-          child: _isLoadingNotifications
-              ? Center(
-                  child: CircularProgressIndicator(
-                    color: theme.primaryColor,
-                  ),
-                )
-              : _notifications.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.notifications_none,
-                            size: 48,
-                            color: theme.colorScheme.onSurface.withOpacity(0.5),
-                          ),
-                          SizedBox(height: 16),
-                          Text(
-                            'No tasks or reminders yet',
-                            style: textTheme.bodyMedium?.copyWith(
-                              color:
-                                  theme.colorScheme.onSurface.withOpacity(0.7),
-                            ),
-                          ),
-                          SizedBox(height: 8),
-                          Text(
-                            'Chat with me to create reminders!',
-                            style: textTheme.bodySmall?.copyWith(
-                              color:
-                                  theme.colorScheme.onSurface.withOpacity(0.5),
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  : ListView.builder(
-                      itemCount: _notifications.length,
-                      itemBuilder: (context, index) {
-                        final notification = _notifications[index];
-                        final createdAt = notification['created_at'] != null
-                            ? DateTime.tryParse(
-                                notification['created_at'].toString())
-                            : DateTime.now();
-                        final timeAgo = createdAt != null
-                            ? _getTimeAgo(createdAt)
-                            : 'Unknown';
-
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8.0),
-                          child: Card(
-                            elevation: 2,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(12.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      _getNotificationIcon(
-                                          notification['notification_type'] ??
-                                              'general_reminder'),
-                                      SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          notification['title'] ?? 'Reminder',
-                                          style: textTheme.bodyMedium?.copyWith(
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                      Container(
-                                        padding: EdgeInsets.symmetric(
-                                            horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: _getPriorityColor(
-                                                  notification['priority'] ??
-                                                      'medium')
-                                              .withOpacity(0.1),
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                        ),
-                                        child: Text(
-                                          notification['priority']
-                                                  ?.toString()
-                                                  .toUpperCase() ??
-                                              'MEDIUM',
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.bold,
-                                            color: _getPriorityColor(
-                                                notification['priority'] ??
-                                                    'medium'),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  SizedBox(height: 8),
-                                  Text(
-                                    notification['message'] ?? 'No description',
-                                    style: textTheme.bodySmall?.copyWith(
-                                      color: theme.colorScheme.onSurface
-                                          .withOpacity(0.7),
-                                    ),
-                                  ),
-                                  SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.access_time,
-                                        size: 14,
-                                        color: theme.primaryColor,
-                                      ),
-                                      SizedBox(width: 4),
-                                      Text(
-                                        timeAgo,
-                                        style: textTheme.bodySmall?.copyWith(
-                                          color: theme.primaryColor,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                      Spacer(),
-                                      Container(
-                                        padding: EdgeInsets.symmetric(
-                                            horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: _getStatusColor(
-                                                  notification['status'] ??
-                                                      'pending')
-                                              .withOpacity(0.1),
-                                          borderRadius:
-                                              BorderRadius.circular(6),
-                                        ),
-                                        child: Text(
-                                          notification['status']
-                                                  ?.toString()
-                                                  .toUpperCase() ??
-                                              'PENDING',
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.bold,
-                                            color: _getStatusColor(
-                                                notification['status'] ??
-                                                    'pending'),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-        ),
+        if (!isMobile)
+          Expanded(child: _buildNotificationsList(context, isDark)),
       ],
     );
   }
@@ -1431,5 +1118,505 @@ class _DashboardScreenState extends State<DashboardScreen>
       default:
         return Colors.grey;
     }
+  }
+
+  PreferredSizeWidget _buildMobileAppBar(BuildContext context, bool isDark) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    return AppBar(
+      backgroundColor: theme.primaryColor,
+      elevation: 0,
+      leading: Builder(
+        builder: (context) => IconButton(
+          icon: Icon(Icons.menu, color: Colors.white),
+          onPressed: () => Scaffold.of(context).openDrawer(),
+        ),
+      ),
+      title: Row(
+        children: [
+          Icon(Icons.medical_services_outlined, color: Colors.white, size: 26),
+          SizedBox(width: 8),
+          Text(
+            'Airavat',
+            style: textTheme.titleLarge?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        Consumer<ThemeProvider>(
+          builder: (context, themeProvider, child) {
+            return IconButton(
+              icon: Icon(
+                themeProvider.isDarkMode ? Icons.light_mode : Icons.dark_mode,
+                color: Colors.white,
+              ),
+              onPressed: () => themeProvider.toggleTheme(),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMobileDrawer(BuildContext context, bool isDark) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    return Drawer(
+      backgroundColor: theme.colorScheme.surface,
+      child: Column(
+        children: [
+          Container(
+            padding: EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: theme.primaryColor,
+              borderRadius: BorderRadius.only(
+                bottomLeft: Radius.circular(16),
+                bottomRight: Radius.circular(16),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.medical_services_outlined,
+                    color: Colors.white, size: 28),
+                SizedBox(width: 12),
+                Text('Airavat',
+                    style: textTheme.titleLarge?.copyWith(
+                        color: Colors.white, fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+          SizedBox(height: 16),
+          ListTile(
+            leading: Icon(Icons.home, color: theme.primaryColor),
+            title: Text('Dashboard', style: textTheme.bodyLarge),
+            onTap: () {
+              Navigator.of(context).pop();
+              context.go('/dashboard');
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.chat_bubble_outline, color: theme.primaryColor),
+            title: Text('Chat with AI', style: textTheme.bodyLarge),
+            onTap: () {
+              Navigator.of(context).pop();
+              context.go('/chat');
+            },
+          ),
+          ListTile(
+            leading:
+                Icon(Icons.account_circle_outlined, color: theme.primaryColor),
+            title: Text('Account', style: textTheme.bodyLarge),
+            onTap: () {
+              Navigator.of(context).pop();
+              context.go('/account');
+            },
+          ),
+          Spacer(),
+          ListTile(
+            leading: Icon(Icons.logout_outlined, color: theme.primaryColor),
+            title: Text('Log Out', style: textTheme.bodyLarge),
+            onTap: () {
+              Navigator.of(context).pop();
+              _logout();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopTreatmentHistoryList(BuildContext context, bool isDark) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    if (_isLoadingTreatments) {
+      return Center(
+          child: CircularProgressIndicator(color: theme.primaryColor));
+    }
+    if (_treatmentHistory.isEmpty) {
+      return Center(child: _buildEmptyState(context, isDark));
+    }
+    return ListView.builder(
+      itemCount: _treatmentHistory.length,
+      itemBuilder: (context, index) {
+        final treatment = _treatmentHistory[index];
+        final timestamp = DateTime.parse(treatment['timestamp']);
+        final timeAgo = _getTimeAgo(timestamp);
+        final isLatest = treatment['is_latest'] == true;
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          child: Card(
+            elevation: isLatest ? 6 : 2,
+            color: isLatest ? theme.primaryColor.withOpacity(0.05) : null,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: isLatest
+                  ? BorderSide(
+                      color: theme.primaryColor.withOpacity(0.3), width: 2)
+                  : BorderSide.none,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(isLatest ? Icons.star : Icons.medical_services,
+                          size: 16,
+                          color: isLatest ? Colors.amber : theme.primaryColor),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          isLatest ? 'Latest Treatment - $timeAgo' : timeAgo,
+                          style: textTheme.bodySmall?.copyWith(
+                            color: isLatest
+                                ? Colors.amber.shade700
+                                : theme.primaryColor,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      if (isLatest)
+                        Container(
+                          padding:
+                              EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                              color: Colors.amber,
+                              borderRadius: BorderRadius.circular(12)),
+                          child: Text('LATEST',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold)),
+                        ),
+                    ],
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    treatment['text'].length > 100
+                        ? '${treatment['text'].substring(0, 100)}...'
+                        : treatment['text'],
+                    style: textTheme.bodySmall?.copyWith(height: 1.4),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildMobileTreatmentHistory(BuildContext context, bool isDark) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    if (_isLoadingTreatments) {
+      return Center(
+          child: CircularProgressIndicator(color: theme.primaryColor));
+    }
+    if (_treatmentHistory.isEmpty) {
+      return _buildEmptyState(context, isDark);
+    }
+    return SizedBox(
+      height: 200,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: _treatmentHistory.length,
+        itemBuilder: (context, index) {
+          final treatment = _treatmentHistory[index];
+          final timestamp = DateTime.parse(treatment['timestamp']);
+          final timeAgo = _getTimeAgo(timestamp);
+          final isLatest = treatment['is_latest'] == true;
+          return Container(
+            width: 260,
+            margin: EdgeInsets.only(right: 12),
+            child: Card(
+              elevation: isLatest ? 6 : 2,
+              color: isLatest ? theme.primaryColor.withOpacity(0.05) : null,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: isLatest
+                    ? BorderSide(
+                        color: theme.primaryColor.withOpacity(0.3), width: 2)
+                    : BorderSide.none,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(isLatest ? Icons.star : Icons.medical_services,
+                            size: 16,
+                            color:
+                                isLatest ? Colors.amber : theme.primaryColor),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            isLatest ? 'Latest - $timeAgo' : timeAgo,
+                            style: textTheme.bodySmall?.copyWith(
+                                color: isLatest
+                                    ? Colors.amber.shade700
+                                    : theme.primaryColor,
+                                fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      treatment['text'].length > 90
+                          ? '${treatment['text'].substring(0, 90)}...'
+                          : treatment['text'],
+                      style: textTheme.bodySmall?.copyWith(height: 1.4),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildMetricsListView(BuildContext context, bool isDark) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    return ListView.builder(
+      itemCount: _organSystems.length,
+      itemBuilder: (context, index) {
+        final organ = _organSystems[index];
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          child: Card(
+            elevation: 2,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: InkWell(
+              onTap: () => _showPremiumDialog(context, organ),
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Row(
+                  children: [
+                    _getOrganIcon(organ),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(organ,
+                          style: textTheme.bodyMedium
+                              ?.copyWith(fontWeight: FontWeight.w600)),
+                    ),
+                    Container(
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.amber),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.star, size: 14, color: Colors.amber),
+                          SizedBox(width: 4),
+                          Text('Premium',
+                              style: textTheme.bodySmall?.copyWith(
+                                  color: Colors.amber.shade700,
+                                  fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildMobileMetricsList(BuildContext context, bool isDark) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: NeverScrollableScrollPhysics(),
+      itemCount: _organSystems.length,
+      itemBuilder: (context, index) {
+        final organ = _organSystems[index];
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6.0),
+          child: Card(
+            elevation: 2,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: InkWell(
+              onTap: () => _showPremiumDialog(context, organ),
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Row(
+                  children: [
+                    _getOrganIcon(organ),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(organ,
+                          style: textTheme.bodyMedium
+                              ?.copyWith(fontWeight: FontWeight.w600)),
+                    ),
+                    Icon(Icons.chevron_right, color: theme.primaryColor),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildNotificationsList(BuildContext context, bool isDark) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    if (_isLoadingNotifications) {
+      return Center(
+          child: CircularProgressIndicator(color: theme.primaryColor));
+    }
+    if (_notifications.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.notifications_none,
+                size: 48, color: theme.colorScheme.onSurface.withOpacity(0.5)),
+            SizedBox(height: 12),
+            Text('No tasks or reminders yet',
+                style: textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurface.withOpacity(0.7))),
+          ],
+        ),
+      );
+    }
+    return ListView.builder(
+      itemCount: _notifications.length,
+      itemBuilder: (context, index) {
+        final notification = _notifications[index];
+        final createdAt = notification['created_at'] != null
+            ? DateTime.tryParse(notification['created_at'].toString())
+            : DateTime.now();
+        final timeAgo = createdAt != null ? _getTimeAgo(createdAt) : 'Unknown';
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          child: Card(
+            elevation: 2,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      _getNotificationIcon(notification['notification_type'] ??
+                          'general_reminder'),
+                      SizedBox(width: 12),
+                      Expanded(
+                          child: Text(notification['title'] ?? 'Reminder',
+                              style: textTheme.bodyMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600))),
+                      Container(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: _getPriorityColor(
+                                  notification['priority'] ?? 'medium')
+                              .withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          (notification['priority']
+                                  ?.toString()
+                                  .toUpperCase()) ??
+                              'MEDIUM',
+                          style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: _getPriorityColor(
+                                  notification['priority'] ?? 'medium')),
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 8),
+                  Text(notification['message'] ?? 'No description',
+                      style: textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurface.withOpacity(0.7))),
+                  SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(Icons.access_time,
+                          size: 14, color: theme.primaryColor),
+                      SizedBox(width: 4),
+                      Text(timeAgo,
+                          style: textTheme.bodySmall?.copyWith(
+                              color: theme.primaryColor,
+                              fontWeight: FontWeight.w500)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildEmptyState(BuildContext context, bool isDark) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    return Container(
+      padding: EdgeInsets.all(32),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.colorScheme.outline.withOpacity(0.3)),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.history,
+            size: 48,
+            color: theme.colorScheme.onSurface.withOpacity(0.5),
+          ),
+          SizedBox(height: 16),
+          Text(
+            'No activity yet',
+            style: textTheme.titleMedium?.copyWith(
+              color: theme.colorScheme.onSurface.withOpacity(0.7),
+            ),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'Start chatting with your AI assistant to build your medical history',
+            style: textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurface.withOpacity(0.5),
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileNotifications(BuildContext context, bool isDark) {
+    return _buildNotificationsList(context, isDark);
   }
 }

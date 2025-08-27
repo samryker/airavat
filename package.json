@@ -1,20 +1,8 @@
 {
-  "name": "airavat",
-  "version": "1.0.0",
-  "description": "A platform which is actually a digital twin of a person with the same bio informatics of a live person. Basically the brain is AI which enforced with LLM and a reinforcement model so that the correct stimulations are awarded and the wrong ones are not repeated. This is to test the drug stimulations on a body and then it can be applied in body . | **Component**         | **Technology / Tool**                     | **Purpose**                                                             | |-----------------------|-------------------------------------------|-------------------------------------------------------------------------| | **Database**          | Firebase Firestore                        | Secure, real-time data sync for patient vitals, reports, drugs         | | **Storage**           | Firebase Storage                          | For storing CBC PDFs, CT scans, reports                                | | **Auth**              | Firebase Auth                             | Role-based login: patient, caregiver, oncologist                       | | **Compute (ML logic)**| Cloud Functions (Firebase) / AWS Lambda   | Trigger treatment simulation, drug synergy, alerts                     | | **Monitoring & Logging**| Firebase Analytics / Stackdriver        | Track usage, system behavior, custom patient metrics                   | | **Frontend (Phase 2)**| Flutter (Mobile/Web)                      | Cross-platform UI for patient & doctor dashboards                      |",
-  "main": "index.js",
-  "directories": {
-    "doc": "docs"
-  },
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-      "three": "^0.172.0",
-      "@google/model-viewer": "^3.4.0",
-      "vite": "^5.2.0"
-    }
+  "name": "airavat-root",
+  "private": true,
+  "workspaces": [],
+  "dependencies": {},
+  "devDependencies": {},
+  "engines": {}
 }
