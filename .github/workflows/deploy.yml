@@ -114,10 +114,13 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: '3.10.5'
 
       - name: Build Flutter web
         working-directory: airavat_flutter
-        run: flutter build web --release --pwa-strategy=none
+        run: |
+          flutter pub get
+          flutter build web --release --pwa-strategy=none
 
       - name: Install Firebase CLI
         run: npm i -g firebase-tools
