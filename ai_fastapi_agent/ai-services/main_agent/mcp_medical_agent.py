@@ -10,6 +10,10 @@ from datetime import datetime, timedelta
 import json
 import google.generativeai as genai
 from dotenv import load_dotenv
+import logging
+
+# Module-level logger used throughout this module
+logger = logging.getLogger("api")
 
 # Load environment variables
 load_dotenv()
