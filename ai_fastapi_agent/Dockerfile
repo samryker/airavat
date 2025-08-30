@@ -37,4 +37,4 @@ USER app
 EXPOSE 8080
 
 # Command to run the application
-CMD ["uvicorn", "ai-services.main_agent.main:app", "--host", "0.0.0.0", "--port", "8080"] 
+CMD ["uvicorn", "--app-dir", "ai-services", "main_agent.main:app", "--host", "0.0.0.0", "--port", "8080"] 

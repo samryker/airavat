@@ -64,6 +64,13 @@ jobs:
             --timeout=120 \
             --set-env-vars=GEMINI_DISABLED=true
 
+      - name: Ensure public invoker policy
+        run: |
+          gcloud beta run services add-iam-policy-binding ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --member=allUsers \
+            --role=roles/run.invoker || true
+
       - name: Get service URL
         id: geturl
         run: |
