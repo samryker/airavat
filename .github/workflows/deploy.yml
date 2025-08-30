@@ -11,7 +11,7 @@ env:
   FIREBASE_PROJECT_ID: mira-d303d
   ARTIFACT_REGISTRY_REPO: airavat
   SERVICE_NAME: airavat-backend
-  WIF_PROVIDER: projects/10892877764/locations/global/workloadIdentityPools/github/providers/github-provider
+  WIF_PROVIDER:  projects/10892877764/locations/global/workloadIdentityPools/github/providers/github-provider
   BACKEND_SERVICE_ACCOUNT: github-actions-deployer@mira-470320.iam.gserviceaccount.com
   FRONTEND_SERVICE_ACCOUNT: firebase-deployer@mira-d303d.iam.gserviceaccount.com
 
@@ -56,7 +56,7 @@ jobs:
             --region=${{ env.REGION }} \
             --image="$IMAGE" \
             --allow-unauthenticated \
-            --cpu=0.5 \
+            --cpu=1 \
             --memory=512Mi \
             --concurrency=80 \
             --min-instances=0 \
