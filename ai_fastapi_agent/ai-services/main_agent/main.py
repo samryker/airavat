@@ -68,11 +68,19 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[],
-    allow_origin_regex=r"^(https?:\/\/(localhost(:\d+)?|127\.0\.0\.1(:\d+)?))$|^(https:\/\/[a-zA-Z0-9-]+\.web\.app)$|^(https:\/\/[a-zA-Z0-9-]+\.firebaseapp\.com)$",
+    allow_origins=[
+        "https://mira-d303d.web.app",
+        "https://mira-d303d.firebaseapp.com",
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"] ,
+    expose_headers=["*"],
+    max_age=86400,
 )
 
 if SMPL_AVAILABLE and smpl_router:
