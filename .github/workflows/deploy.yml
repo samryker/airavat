@@ -72,6 +72,7 @@ jobs:
             --region=${{ env.REGION }} \
             --image="$IMAGE" \
             --allow-unauthenticated \
+            --ingress=all \
             --cpu=1 \
             --memory=512Mi \
             --concurrency=80 \
@@ -79,6 +80,28 @@ jobs:
             --max-instances=2 \
             --timeout=120 \
             --set-env-vars=^~^GEMINI_DISABLED=true~ALLOWED_ORIGINS=$ALLOWED_ORIGINS
+
+      - name: Route 100% traffic to latest revision
+        run: |
+          gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --to-latest
+
+      - name: Show Cloud Run service ingress and env
+        run: |
+          gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format='value(spec.ingress)'
+          gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format='table(spec.template.spec.containers[0].env)'
+
+      - name: Test CORS preflight from runner
+        run: |
+          echo "Testing CORS preflight to $BACKEND_URL"
+          curl -s -i -X OPTIONS "$BACKEND_URL/health" \
+            -H 'Origin: https://${{ env.FIREBASE_PROJECT_ID }}.web.app' \
+            -H 'Access-Control-Request-Method: GET' | sed -n '1,20p'
+          echo "Testing CORS preflight to /smpl/health"
+          curl -s -i -X OPTIONS "$BACKEND_URL/smpl/health" \
+            -H 'Origin: https://${{ env.FIREBASE_PROJECT_ID }}.web.app' \
+            -H 'Access-Control-Request-Method: GET' | sed -n '1,20p'
 
       - name: Ensure public invoker policy
         run: |

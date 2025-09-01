@@ -84,10 +84,12 @@ else:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    # Fallback regex to cover Firebase Hosting and localhost during migrations
+    allow_origin_regex=r"^(https:\/\/[a-zA-Z0-9-]+\.web\.app|https:\/\/[a-zA-Z0-9-]+\.firebaseapp\.com|http:\/\/localhost(?::\d+)?|http:\/\/127\.0\.0\.1(?::\d+)?)$",
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"] ,
-    expose_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
+    expose_headers=["Content-Type", "Authorization"],
     max_age=86400,
 )
 
