@@ -78,7 +78,7 @@ jobs:
             --min-instances=0 \
             --max-instances=2 \
             --timeout=120 \
-            --set-env-vars=GEMINI_DISABLED=true,ALLOWED_ORIGINS="$ALLOWED_ORIGINS"
+            --set-env-vars=^~^GEMINI_DISABLED=true~ALLOWED_ORIGINS=$ALLOWED_ORIGINS
 
       - name: Ensure public invoker policy
         run: |
