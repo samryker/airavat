@@ -191,10 +191,18 @@ jobs:
           channel: stable
           flutter-version: '3.10.5'
 
+      - name: Setup Chrome for web tests
+        id: chrome
+        uses: browser-actions/setup-chrome@v1
+
       - name: Run Flutter tests
         working-directory: airavat_flutter
+        env:
+          CHROME_EXECUTABLE: ${{ steps.chrome.outputs.chrome-path }}
         run: |
-          flutter test -r expanded
+          flutter config --enable-web
+          flutter pub get
+          flutter test -r expanded -d chrome
 
       - name: Build Flutter web
         working-directory: airavat_flutter
