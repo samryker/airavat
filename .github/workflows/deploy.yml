@@ -27,6 +27,7 @@ jobs:
       contents: read
     outputs:
       backend_url: ${{ steps.geturl.outputs.backend_url }}
+      smpl_health_url: ${{ steps.geturl.outputs.smpl_health_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -93,7 +94,8 @@ jobs:
           gcloud beta run services add-iam-policy-binding ${{ env.SERVICE_NAME }} \
             --region=${{ env.REGION }} \
             --member=allUsers \
-            --role=roles/run.invoker || true
+            --role=roles/run.invoker
+          gcloud run services get-iam-policy ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format=json | jq '.' | sed -n '1,120p'
 
       - name: Get service URL
         id: geturl
@@ -101,10 +103,15 @@ jobs:
           URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format='value(status.url)')
           echo "backend_url=$URL" >> $GITHUB_OUTPUT
           echo "BACKEND_URL=$URL" >> $GITHUB_ENV
+          echo "smpl_health_url=$URL/smpl/health" >> $GITHUB_OUTPUT
 
       - name: Print backend URL
         run: |
           echo "Backend URL: $BACKEND_URL"
+
+      - name: Print SMPL health URL
+        run: |
+          echo "SMPL health URL: ${{ steps.geturl.outputs.smpl_health_url }}"
 
       - name: Show Cloud Run service ingress and env
         run: |
@@ -119,13 +126,19 @@ jobs:
           echo "Testing CORS preflight to $BACKEND_URL"
           curl -s -i -X OPTIONS "$BACKEND_URL/health" \
             -H 'Origin: https://${{ env.FIREBASE_PROJECT_ID }}.web.app' \
-            -H 'Access-Control-Request-Method: GET' | sed -n '1,20p'
+            -H 'Access-Control-Request-Method: GET' \
+            -H 'Access-Control-Request-Headers: content-type' | sed -n '1,40p'
+          echo "Testing simple GET without Origin"
+          curl -s -i "$BACKEND_URL/health" | sed -n '1,20p'
           echo "Testing CORS GET with Origin header"
           curl -s -i "$BACKEND_URL/health" -H 'Origin: https://${{ env.FIREBASE_PROJECT_ID }}.web.app' | sed -n '1,20p'
           echo "Testing CORS preflight to /smpl/health"
           curl -s -i -X OPTIONS "$BACKEND_URL/smpl/health" \
             -H 'Origin: https://${{ env.FIREBASE_PROJECT_ID }}.web.app' \
-            -H 'Access-Control-Request-Method: GET' | sed -n '1,20p'
+            -H 'Access-Control-Request-Method: GET' \
+            -H 'Access-Control-Request-Headers: content-type' | sed -n '1,40p'
+          echo "Testing SMPL health GET"
+          curl -s -i "$BACKEND_URL/smpl/health" | sed -n '1,20p'
 
   frontend:
     runs-on: ubuntu-latest
@@ -173,6 +186,11 @@ jobs:
         with:
           channel: stable
           flutter-version: '3.10.5'
+
+      - name: Run Flutter tests
+        working-directory: airavat_flutter
+        run: |
+          flutter test -r expanded
 
       - name: Build Flutter web
         working-directory: airavat_flutter
