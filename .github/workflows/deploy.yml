@@ -5,6 +5,10 @@ on:
     branches: [ main ]
   workflow_dispatch: {}
 
+concurrency:
+  group: deploy-all-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REGION: us-central1
   GCP_PROJECT_ID: mira-470320
@@ -26,6 +30,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Print commit info
+        run: |
+          echo "Commit SHA: ${{ github.sha }}"
+          echo "Ref: ${{ github.ref }}"
 
       - name: Auth with Workload Identity Federation (GCP)
         uses: google-github-actions/auth@v2
@@ -50,6 +61,11 @@ jobs:
       - name: Push Docker image
         run: docker push "$IMAGE"
 
+      - name: Compute allowed origins for CORS
+        run: |
+          echo "ALLOWED_ORIGINS=https://${{ env.FIREBASE_PROJECT_ID }}.web.app,https://${{ env.FIREBASE_PROJECT_ID }}.firebaseapp.com" >> $GITHUB_ENV
+          echo "Allowed origins: $ALLOWED_ORIGINS"
+
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy ${{ env.SERVICE_NAME }} \
@@ -62,7 +78,7 @@ jobs:
             --min-instances=0 \
             --max-instances=2 \
             --timeout=120 \
-            --set-env-vars=GEMINI_DISABLED=true
+            --set-env-vars=GEMINI_DISABLED=true,ALLOWED_ORIGINS="$ALLOWED_ORIGINS"
 
       - name: Ensure public invoker policy
         run: |
@@ -93,6 +109,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Auth with Workload Identity Federation (Firebase project)
         uses: google-github-actions/auth@v2
@@ -105,10 +123,21 @@ jobs:
         with:
           project_id: ${{ env.FIREBASE_PROJECT_ID }}
 
+      - name: Print deployment info
+        run: |
+          echo "Deploying frontend with BACKEND_URL=$BACKEND_URL"
+
       - name: Inject backend URL into Flutter config
         run: |
           perl -0777 -pe "s|static const String baseUrl = ['\"](.+?)['\"];|static const String baseUrl = '$BACKEND_URL';|g" -i airavat_flutter/lib/config/backend_config.dart
           perl -0777 -pe "s|const SMPL_API_BASE = (.+);|const SMPL_API_BASE = '$BACKEND_URL';|g" -i airavat_flutter/web/viewer/index.html
+          # Also update twin3d and Firebase functions proxy if present
+          if [ -f twin3d/src/main.js ]; then
+            perl -0777 -pe "s|const SMPL_API_BASE = (.+);|const SMPL_API_BASE = '$BACKEND_URL';|g" -i twin3d/src/main.js
+          fi
+          if [ -f functions/index.js ]; then
+            perl -0777 -pe "s|const SMPL_API_BASE = (.+);|const SMPL_API_BASE = '$BACKEND_URL';|g" -i functions/index.js
+          fi
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2

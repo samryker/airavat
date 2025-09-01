@@ -66,16 +66,24 @@ app = FastAPI(
 )
 
 # Add CORS middleware
+# ALLOWED_ORIGINS can be provided as a comma-separated list via environment variable
+default_allowed_origins = [
+    "https://mira-d303d.web.app",
+    "https://mira-d303d.firebaseapp.com",
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+]
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
+if allowed_origins_env.strip():
+    allowed_origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
+else:
+    allowed_origins = default_allowed_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://mira-d303d.web.app",
-        "https://mira-d303d.firebaseapp.com",
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:3001",
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"] ,
