@@ -73,9 +73,7 @@ jobs:
           gcloud run deploy ${{ env.SERVICE_NAME }} \
             --region=${{ env.REGION }} \
             --image="$IMAGE" \
-            --allow-unauthenticated \
             --ingress=all \
-            --invoker-iam-check=disabled \
             --cpu=1 \
             --memory=512Mi \
             --concurrency=80 \
