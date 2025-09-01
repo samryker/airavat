@@ -77,16 +77,21 @@ default_allowed_origins = [
 ]
 allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
 if allowed_origins_env.strip():
-    allowed_origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
+    if allowed_origins_env.strip() == "*":
+        allowed_origins = ["*"]
+    else:
+        allowed_origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
 else:
     allowed_origins = default_allowed_origins
+logger.info(f"CORS config: ALLOWED_ORIGINS env='{allowed_origins_env}', using list={allowed_origins}")
 
+use_wildcard = allowed_origins == ["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     # Fallback regex to cover Firebase Hosting and localhost during migrations
-    allow_origin_regex=r"^(https:\/\/[a-zA-Z0-9-]+\.web\.app|https:\/\/[a-zA-Z0-9-]+\.firebaseapp\.com|http:\/\/localhost(?::\d+)?|http:\/\/127\.0\.0\.1(?::\d+)?)$",
-    allow_credentials=True,
+    allow_origin_regex=None if use_wildcard else r"^(https:\/\/[a-zA-Z0-9-]+\.web\.app|https:\/\/[a-zA-Z0-9-]+\.firebaseapp\.com|http:\/\/localhost(?::\d+)?|http:\/\/127\.0\.0\.1(?::\d+)?)$",
+    allow_credentials=False if use_wildcard else True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
     expose_headers=["Content-Type", "Authorization"],

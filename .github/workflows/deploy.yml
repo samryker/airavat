@@ -63,7 +63,8 @@ jobs:
 
       - name: Compute allowed origins for CORS
         run: |
-          echo "ALLOWED_ORIGINS=https://${{ env.FIREBASE_PROJECT_ID }}.web.app,https://${{ env.FIREBASE_PROJECT_ID }}.firebaseapp.com" >> $GITHUB_ENV
+          # Temporarily allow all origins to validate CORS wiring in Cloud Run
+          echo "ALLOWED_ORIGINS=*" >> $GITHUB_ENV
           echo "Allowed origins: $ALLOWED_ORIGINS"
 
       - name: Deploy to Cloud Run
@@ -87,22 +88,6 @@ jobs:
             --region=${{ env.REGION }} \
             --to-latest
 
-      - name: Show Cloud Run service ingress and env
-        run: |
-          gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format='value(spec.ingress)'
-          gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format='table(spec.template.spec.containers[0].env)'
-
-      - name: Test CORS preflight from runner
-        run: |
-          echo "Testing CORS preflight to $BACKEND_URL"
-          curl -s -i -X OPTIONS "$BACKEND_URL/health" \
-            -H 'Origin: https://${{ env.FIREBASE_PROJECT_ID }}.web.app' \
-            -H 'Access-Control-Request-Method: GET' | sed -n '1,20p'
-          echo "Testing CORS preflight to /smpl/health"
-          curl -s -i -X OPTIONS "$BACKEND_URL/smpl/health" \
-            -H 'Origin: https://${{ env.FIREBASE_PROJECT_ID }}.web.app' \
-            -H 'Access-Control-Request-Method: GET' | sed -n '1,20p'
-
       - name: Ensure public invoker policy
         run: |
           gcloud beta run services add-iam-policy-binding ${{ env.SERVICE_NAME }} \
@@ -120,6 +105,27 @@ jobs:
       - name: Print backend URL
         run: |
           echo "Backend URL: $BACKEND_URL"
+
+      - name: Show Cloud Run service ingress and env
+        run: |
+          gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format='value(spec.ingress)'
+          gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format='table(spec.template.spec.containers[0].env)'
+
+      - name: Wait for revision to become ready
+        run: sleep 20
+
+      - name: Test CORS from runner
+        run: |
+          echo "Testing CORS preflight to $BACKEND_URL"
+          curl -s -i -X OPTIONS "$BACKEND_URL/health" \
+            -H 'Origin: https://${{ env.FIREBASE_PROJECT_ID }}.web.app' \
+            -H 'Access-Control-Request-Method: GET' | sed -n '1,20p'
+          echo "Testing CORS GET with Origin header"
+          curl -s -i "$BACKEND_URL/health" -H 'Origin: https://${{ env.FIREBASE_PROJECT_ID }}.web.app' | sed -n '1,20p'
+          echo "Testing CORS preflight to /smpl/health"
+          curl -s -i -X OPTIONS "$BACKEND_URL/smpl/health" \
+            -H 'Origin: https://${{ env.FIREBASE_PROJECT_ID }}.web.app' \
+            -H 'Access-Control-Request-Method: GET' | sed -n '1,20p'
 
   frontend:
     runs-on: ubuntu-latest
