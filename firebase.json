@@ -35,6 +35,7 @@
     ],
     "rewrites": [
       { "source": "/viewer/**", "destination": "/viewer/index.html" },
+      { "source": "/api/**", "run": { "serviceId": "airavat-backend", "region": "us-central1" } },
       { "source": "**", "destination": "/index.html" }
     ],
     "cleanUrls": true

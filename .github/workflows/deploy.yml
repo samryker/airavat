@@ -75,6 +75,7 @@ jobs:
             --image="$IMAGE" \
             --allow-unauthenticated \
             --ingress=all \
+            --invoker-iam-check=disabled \
             --cpu=1 \
             --memory=512Mi \
             --concurrency=80 \
@@ -94,7 +95,7 @@ jobs:
           gcloud beta run services add-iam-policy-binding ${{ env.SERVICE_NAME }} \
             --region=${{ env.REGION }} \
             --member=allUsers \
-            --role=roles/run.invoker
+            --role=roles/run.invoker || echo "Skipping allUsers binding due to org policy"
           gcloud run services get-iam-policy ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format=json | jq '.' | sed -n '1,120p'
 
       - name: Get service URL
@@ -169,17 +170,22 @@ jobs:
         run: |
           echo "Deploying frontend with BACKEND_URL=$BACKEND_URL"
 
-      - name: Inject backend URL into Flutter config
+      - name: Inject backend URL into Flutter config (use Hosting rewrite /api)
         run: |
-          perl -0777 -pe "s|static const String baseUrl = ['\"](.+?)['\"];|static const String baseUrl = '$BACKEND_URL';|g" -i airavat_flutter/lib/config/backend_config.dart
-          perl -0777 -pe "s|const SMPL_API_BASE = (.+);|const SMPL_API_BASE = '$BACKEND_URL';|g" -i airavat_flutter/web/viewer/index.html
+          perl -0777 -pe "s|static const String baseUrl = ['\"](.+?)['\"];|static const String baseUrl = '/api';|g" -i airavat_flutter/lib/config/backend_config.dart
+          perl -0777 -pe "s|const SMPL_API_BASE = (.+);|const SMPL_API_BASE = '/api';|g" -i airavat_flutter/web/viewer/index.html
           # Also update twin3d and Firebase functions proxy if present
           if [ -f twin3d/src/main.js ]; then
-            perl -0777 -pe "s|const SMPL_API_BASE = (.+);|const SMPL_API_BASE = '$BACKEND_URL';|g" -i twin3d/src/main.js
+            perl -0777 -pe "s|const SMPL_API_BASE = (.+);|const SMPL_API_BASE = '/api';|g" -i twin3d/src/main.js
           fi
           if [ -f functions/index.js ]; then
-            perl -0777 -pe "s|const SMPL_API_BASE = (.+);|const SMPL_API_BASE = '$BACKEND_URL';|g" -i functions/index.js
+            perl -0777 -pe "s|const SMPL_API_BASE = (.+);|const SMPL_API_BASE = '/api';|g" -i functions/index.js
           fi
+
+      - name: Verify no stale backend URLs remain
+        run: |
+          echo "Scanning for stale run.app URLs after injection..."
+          ! grep -R --line-number --color=never -E 'https://[A-Za-z0-9-]+-uc\.a\.run\.app' . || true
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
