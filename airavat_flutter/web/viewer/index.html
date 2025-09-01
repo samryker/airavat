@@ -11,7 +11,8 @@
         font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
         background: linear-gradient(135deg, #ffffff 0%, #fff7cc 40%, #d9fbe6 100%);
       }
-      #ui { position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(255,255,255,0.92); border-radius: 10px; padding: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.15); }
+      /* Hide built-in UI; controls come from Flutter */
+      #ui { display: none; }
       #ui h4 { margin: 0 0 8px 0; font-size: 14px; }
       #ui .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
       #ui label { font-size: 12px; width: 64px; color: #333; }
@@ -85,15 +86,15 @@
     fetchAndLoad();
     const applyBtn = document.getElementById('apply');
 
-    heightR.addEventListener('input', () => heightN.value = heightR.value);
-    heightN.addEventListener('input', () => heightR.value = heightN.value);
-    weightR.addEventListener('input', () => weightN.value = weightR.value);
-    weightN.addEventListener('input', () => weightR.value = weightN.value);
-    beta1R.addEventListener('input', () => beta1N.value = beta1R.value);
-    beta1N.addEventListener('input', () => beta1R.value = beta1N.value);
+    heightR?.addEventListener('input', () => heightN.value = heightR.value);
+    heightN?.addEventListener('input', () => heightR.value = heightN.value);
+    weightR?.addEventListener('input', () => weightN.value = weightR.value);
+    weightN?.addEventListener('input', () => weightR.value = weightN.value);
+    beta1R?.addEventListener('input', () => beta1N.value = beta1R.value);
+    beta1N?.addEventListener('input', () => beta1R.value = beta1N.value);
 
-    modelSel.addEventListener('change', fetchAndLoad);
-    applyBtn.addEventListener('click', fetchAndLoad);
+    modelSel?.addEventListener('change', fetchAndLoad);
+    applyBtn?.addEventListener('click', fetchAndLoad);
 
     window.addEventListener('message', async (evt) => {
       const data = evt?.data || {};
@@ -108,10 +109,10 @@
     });
 
     async function fetchAndLoad() {
-      const model = modelSel.value;
-      const height = Number(heightR.value);
-      const weight = Number(weightR.value);
-      const beta1 = Number(beta1R.value);
+      const model = modelSel?.value || 'neutral';
+      const height = Number(heightR?.value || 170);
+      const weight = Number(weightR?.value || 70);
+      const beta1 = Number(beta1R?.value || 0.4);
       setStatus('Loading SMPL...');
       try {
         const h = await fetch(`${SMPL_API_BASE}/smpl/health`);
@@ -151,7 +152,7 @@
 
       const h = parameters?.height_cm ?? 170;
       const w = parameters?.weight_kg ?? 70;
-      const overall = 2.0;
+      const overall = 2.2; // slightly taller overall scale for vertical framing
       const hScale = h / 170.0;
       const wScale = w / 70.0;
       root.scale.set(overall * wScale, overall * hScale, overall * wScale);
@@ -176,12 +177,12 @@
       const w = parameters?.weight_kg ?? 70;
       const hScale = h / 170.0;
       const wScale = w / 70.0;
-      const overall = 2.0;
+      const overall = 2.2;
       const torso = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.3 * wScale * overall, 0.25 * wScale * overall, 0.8 * hScale * overall, 32),
+        new THREE.CylinderGeometry(0.28 * wScale * overall, 0.23 * wScale * overall, 0.9 * hScale * overall, 32),
         new THREE.MeshPhongMaterial({ color: 0x4a90e2, shininess: 30 })
       );
-      torso.position.y = 1.1 * hScale * overall;
+      torso.position.y = 1.2 * hScale * overall;
       group.add(torso);
       scene.add(group);
       currentMesh = group;
@@ -189,16 +190,15 @@
 
     function init() {
       scene = new THREE.Scene();
-      // transparent scene to show CSS gradient
       scene.background = null;
-      camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
-      camera.position.set(0, 2, 6);
+      camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+      camera.position.set(0, 2.2, 5.2); // higher Y, a bit closer Z for vertical framing
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
       renderer.setPixelRatio(window.devicePixelRatio);
       renderer.setSize(window.innerWidth, window.innerHeight);
       document.body.appendChild(renderer.domElement);
 
-      const amb = new THREE.AmbientLight(0xffffff, 0.9);
+      const amb = new THREE.AmbientLight(0xffffff, 0.95);
       scene.add(amb);
       const dir = new THREE.DirectionalLight(0xffffff, 1.2);
       dir.position.set(5, 10, 7.5);
@@ -207,9 +207,9 @@
       controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
       controls.dampingFactor = 0.05;
-      controls.minDistance = 2;
-      controls.maxDistance = 20;
-      controls.maxPolarAngle = Math.PI / 2;
+      controls.minDistance = 2.0;
+      controls.maxDistance = 10.0; // tighter zoom range
+      controls.maxPolarAngle = Math.PI * 0.55; // limit tilt for portrait view
 
       window.addEventListener('resize', onResize);
       (function animate(){ requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); })();

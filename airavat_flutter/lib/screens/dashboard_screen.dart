@@ -10,6 +10,7 @@ import '../services/twin_service.dart';
 import '../widgets/webgl_twin_widget.dart';
 import '../providers/theme_provider.dart';
 import '../config/theme_config.dart';
+import '../widgets/smpl_controls.dart';
 
 class DashboardScreen extends StatefulWidget {
   @override
@@ -32,6 +33,11 @@ class _DashboardScreenState extends State<DashboardScreen>
   bool _isLoadingTreatments = false;
   List<Map<String, dynamic>> _notifications = [];
   bool _isLoadingNotifications = false;
+  // SMPL parameters controlled by Flutter UI
+  String _smplGender = 'neutral';
+  double _smplHeight = 170;
+  double _smplWeight = 70;
+  double _smplBeta1 = 0.4;
 
   final List<String> _organSystems = [
     'Heart',
@@ -527,17 +533,34 @@ class _DashboardScreenState extends State<DashboardScreen>
         _buildSectionTitle('Organ Overview', textTheme, theme),
         SizedBox(height: 16),
         Container(
-          height: isMobile ? 260 : screenSize.height * 0.4,
+          height: isMobile ? 420 : screenSize.height * 0.5,
           child: WebGLTwinWidget(
             userId: _currentUserId,
             userBiomarkers: _userBiomarkers,
             modelUrl: _userModelUrl,
+            initialGender: _smplGender,
+            initialHeightCm: _smplHeight,
+            initialWeightKg: _smplWeight,
+            initialBeta1: _smplBeta1,
             onOrganSelected: (organ) {
               setState(() {
                 _selectedOrgan = organ;
               });
             },
           ),
+        ),
+        const SizedBox(height: 12),
+        // SMPL Controls (Flutter)
+        SmplControls(
+          onChange: (
+              {String? gender, double? height, double? weight, double? beta1}) {
+            setState(() {
+              if (gender != null) _smplGender = gender;
+              if (height != null) _smplHeight = height;
+              if (weight != null) _smplWeight = weight;
+              if (beta1 != null) _smplBeta1 = beta1;
+            });
+          },
         ),
         SizedBox(height: 20),
         if (!isMobile) ...[
