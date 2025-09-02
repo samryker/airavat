@@ -225,5 +225,8 @@ jobs:
       - name: Export access token for Firebase CLI
         run: echo "FIREBASE_TOKEN=$(gcloud auth print-access-token)" >> $GITHUB_ENV
 
+      - name: Enable Cloud Run API in Firebase project
+        run: gcloud services enable run.googleapis.com --project $FIREBASE_PROJECT_ID
+
       - name: Deploy to Firebase Hosting
         run: firebase deploy --only hosting --project $FIREBASE_PROJECT_ID --non-interactive --token "$FIREBASE_TOKEN" 
