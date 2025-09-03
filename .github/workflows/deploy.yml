@@ -18,6 +18,7 @@ env:
   WIF_PROVIDER:  projects/10892877764/locations/global/workloadIdentityPools/github/providers/github-provider
   BACKEND_SERVICE_ACCOUNT: github-actions-deployer@mira-470320.iam.gserviceaccount.com
   FRONTEND_SERVICE_ACCOUNT: firebase-deployer@mira-d303d.iam.gserviceaccount.com
+  USE_HOSTING_REWRITE: "false"
 
 jobs:
   backend:
@@ -168,16 +169,18 @@ jobs:
         run: |
           echo "Deploying frontend with BACKEND_URL=$BACKEND_URL"
 
-      - name: Inject backend URL into Flutter config (use Hosting rewrite /api)
+      - name: Inject backend URL into Flutter config (conditional /api)
         run: |
-          perl -0777 -pe "s|static const String baseUrl = ['\"](.+?)['\"];|static const String baseUrl = '/api';|g" -i airavat_flutter/lib/config/backend_config.dart
-          perl -0777 -pe "s|const SMPL_API_BASE = (.+);|const SMPL_API_BASE = '/api';|g" -i airavat_flutter/web/viewer/index.html
+          TARGET_BASE=${USE_HOSTING_REWRITE:+/api}
+          if [ "$USE_HOSTING_REWRITE" != "true" ]; then TARGET_BASE="$BACKEND_URL"; fi
+          perl -0777 -pe "s|static const String baseUrl = ['\"](.+?)['\"];|static const String baseUrl = '$TARGET_BASE';|g" -i airavat_flutter/lib/config/backend_config.dart
+          perl -0777 -pe "s|const SMPL_API_BASE = (.+);|const SMPL_API_BASE = '$TARGET_BASE';|g" -i airavat_flutter/web/viewer/index.html
           # Also update twin3d and Firebase functions proxy if present
           if [ -f twin3d/src/main.js ]; then
-            perl -0777 -pe "s|const SMPL_API_BASE = (.+);|const SMPL_API_BASE = '/api';|g" -i twin3d/src/main.js
+            perl -0777 -pe "s|const SMPL_API_BASE = (.+);|const SMPL_API_BASE = '$TARGET_BASE';|g" -i twin3d/src/main.js
           fi
           if [ -f functions/index.js ]; then
-            perl -0777 -pe "s|const SMPL_API_BASE = (.+);|const SMPL_API_BASE = '/api';|g" -i functions/index.js
+            perl -0777 -pe "s|const SMPL_API_BASE = (.+);|const SMPL_API_BASE = '$TARGET_BASE';|g" -i functions/index.js
           fi
 
       - name: Verify no stale backend URLs remain
@@ -225,8 +228,15 @@ jobs:
       - name: Export access token for Firebase CLI
         run: echo "FIREBASE_TOKEN=$(gcloud auth print-access-token)" >> $GITHUB_ENV
 
-      - name: Enable Cloud Run API in Firebase project
-        run: gcloud services enable run.googleapis.com --project $FIREBASE_PROJECT_ID
+      - name: Enable Cloud Run API in Firebase project (optional)
+        run: gcloud services enable run.googleapis.com --project $FIREBASE_PROJECT_ID || echo "Skipping enable; lacking permission"
+
+      - name: Disable Cloud Run rewrite if API not enabled or rewrites disabled
+        run: |
+          if [ "$USE_HOSTING_REWRITE" != "true" ]; then
+            echo "Removing Cloud Run rewrites from firebase.json"
+            jq '(.hosting.rewrites) |= map(select(.run|not))' firebase.json > firebase.tmp.json && mv firebase.tmp.json firebase.json
+          fi
 
       - name: Deploy to Firebase Hosting
         run: firebase deploy --only hosting --project $FIREBASE_PROJECT_ID --non-interactive --token "$FIREBASE_TOKEN" 
