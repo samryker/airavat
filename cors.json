@@ -1,0 +1,8 @@
+[
+  {
+    "origin": ["*", "https://mira-d303d.web.app", "https://mira-d303d.firebaseapp.com"],
+    "method": ["GET", "HEAD", "OPTIONS"],
+    "responseHeader": ["Content-Type", "Accept", "Origin", "Range", "Content-Range"],
+    "maxAgeSeconds": 3600
+  }
+]

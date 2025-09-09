@@ -11,7 +11,8 @@ let currentMesh = null;
 let isInitialized = false; // Flag to prevent double initialization
 
 // SMPL API configuration
-const SMPL_API_BASE = 'https://airavat-backend-u3hyo7liyq-uc.a.run.app';
+const SMPL_API_BASE = 'https://airavat-backend-f255cpkfda-uc.app
+';
 
 // Function to load SMPL model dynamically
 async function loadSMPLModel(patientId, height, weight, gender) {

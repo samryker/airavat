@@ -116,7 +116,27 @@
       const beta1 = Number(beta1R?.value || 0.4);
       setStatus('Loading SMPL...');
       try {
-        // Load GLB directly from public GCS bucket (bypasses Cloud Run auth)
+        // Try to get signed URL from backend first
+        const params = new URLSearchParams({
+          patient_id: 'viewer',
+          height: String(height),
+          weight: String(weight),
+          gender: model,
+          model: model,
+          beta1: String(beta1)
+        });
+        
+        const response = await fetch(`${SMPL_API_BASE}/smpl/generate?${params.toString()}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.asset_url) {
+            await loadGLB(data.asset_url, data.parameters);
+            setStatus(`Loaded ${model}.glb via backend`);
+            return;
+          }
+        }
+        
+        // Fallback to direct GCS access
         const glbUrl = `${SMPL_ASSETS_BASE_URL}/${model}.glb`;
         const parameters = {
           height_cm: height,
@@ -127,11 +147,11 @@
         };
         
         await loadGLB(glbUrl, parameters);
-        setStatus(`Loaded ${model}.glb from GCS`);
+        setStatus(`Loaded ${model}.glb from GCS fallback`);
       } catch (e) {
-        console.error('Error loading SMPL from GCS:', e);
+        console.error('Error loading SMPL:', e);
         try {
-          // Fallback to placeholder if GLB fails
+          // Final fallback to placeholder
           const parameters = {
             height_cm: height,
             weight_kg: weight,
@@ -139,7 +159,7 @@
             beta1: beta1
           };
           await loadPlaceholder(parameters);
-          setStatus('Loaded placeholder (GLB failed)');
+          setStatus('Loaded placeholder (all GLB sources failed)');
         } catch (fallbackError) {
           console.error('Fallback also failed:', fallbackError);
           setStatus('Error loading SMPL');

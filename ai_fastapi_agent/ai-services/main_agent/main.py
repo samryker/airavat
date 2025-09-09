@@ -127,10 +127,39 @@ async def smpl_generate_inline(
         gender if gender in {"male", "female"} else "neutral"
     )
     asset_file = f"{selected}.glb"
-    asset_url = (
-        f"{_SMPL_ASSETS_BASE_URL.rstrip('/')}/{asset_file}"
-        if _SMPL_ASSETS_BASE_URL else None
-    )
+    
+    # Generate signed URL for private bucket access
+    asset_url = None
+    if _SMPL_ASSETS_BASE_URL:
+        try:
+            from google.cloud import storage
+            from datetime import timedelta
+            
+            # Extract bucket and object path from SMPL_ASSETS_BASE_URL
+            # e.g., https://storage.googleapis.com/bucket-name/models -> bucket-name, models/file.glb
+            if "storage.googleapis.com" in _SMPL_ASSETS_BASE_URL:
+                parts = _SMPL_ASSETS_BASE_URL.replace("https://storage.googleapis.com/", "").split("/", 1)
+                bucket_name = parts[0]
+                prefix = parts[1] if len(parts) > 1 else ""
+                object_name = f"{prefix}/{asset_file}".strip("/")
+                
+                client = storage.Client()
+                bucket = client.bucket(bucket_name)
+                blob = bucket.blob(object_name)
+                
+                # Generate signed URL valid for 1 hour
+                asset_url = blob.generate_signed_url(
+                    version="v4",
+                    expiration=timedelta(hours=1),
+                    method="GET"
+                )
+            else:
+                # Fallback to direct URL
+                asset_url = f"{_SMPL_ASSETS_BASE_URL.rstrip('/')}/{asset_file}"
+        except Exception as e:
+            logger.warning(f"Failed to generate signed URL: {e}")
+            asset_url = f"{_SMPL_ASSETS_BASE_URL.rstrip('/')}/{asset_file}" if _SMPL_ASSETS_BASE_URL else None
+    
     bmi = None
     try:
         if height and weight and height > 0:

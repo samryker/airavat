@@ -225,9 +225,6 @@ jobs:
       - name: Install Firebase CLI
         run: npm i -g firebase-tools
 
-      - name: Export access token for Firebase CLI
-        run: echo "FIREBASE_TOKEN=$(gcloud auth print-access-token)" >> $GITHUB_ENV
-
       - name: Enable Cloud Run API in Firebase project (optional)
         run: gcloud services enable run.googleapis.com --project $FIREBASE_PROJECT_ID || echo "Skipping enable; lacking permission"
 
@@ -238,5 +235,7 @@ jobs:
             jq '(.hosting.rewrites) |= map(select(.run|not))' firebase.json > firebase.tmp.json && mv firebase.tmp.json firebase.json
           fi
 
-      - name: Deploy to Firebase Hosting
-        run: firebase deploy --only hosting --project $FIREBASE_PROJECT_ID --non-interactive --token "$FIREBASE_TOKEN" 
+      - name: Deploy to Firebase Hosting (ADC)
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ env.GOOGLE_APPLICATION_CREDENTIALS }}
+        run: firebase deploy --only hosting --project $FIREBASE_PROJECT_ID --non-interactive

@@ -1,5 +1,6 @@
 class BackendConfig {
-  static const String baseUrl = 'https://airavat-backend-u3hyo7liyq-uc.a.run.app';
+  static const String baseUrl = 'https://airavat-backend-f255cpkfda-uc.app
+';
   static const String apiUrl = '$baseUrl/agent';
   
   // API Endpoints

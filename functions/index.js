@@ -1,6 +1,7 @@
 const functions = require("firebase-functions");
 
-const SMPL_API_BASE = "https://airavat-backend-u3hyo7liyq-uc.a.run.app";
+const SMPL_API_BASE = 'https://airavat-backend-f255cpkfda-uc.app
+';
 
 async function doFetch(url, options) {
   const { default: fetch } = await import("node-fetch");
