@@ -1,0 +1,8 @@
+name: organizations/213850499605/policies/iam.allowedPolicyMemberDomains
+spec:
+  rules:
+  - values:
+      allowedValues:
+      - C04brietf
+      - allUsers
+      - allAuthenticatedUsers

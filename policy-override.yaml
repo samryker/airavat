@@ -1,0 +1,8 @@
+name: projects/mira-470320/policies/iam.allowedPolicyMemberDomains
+spec:
+  rules:
+  - values:
+      allowedValues:
+      - C04brietf
+      - allUsers
+      - allAuthenticatedUsers
