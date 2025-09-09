@@ -169,24 +169,27 @@ jobs:
         run: |
           echo "Deploying frontend with BACKEND_URL=$BACKEND_URL"
 
-      - name: Inject backend URL into Flutter config (conditional /api)
+      - name: Inject backend URL into Flutter config
         run: |
-          TARGET_BASE=${USE_HOSTING_REWRITE:+/api}
-          if [ "$USE_HOSTING_REWRITE" != "true" ]; then TARGET_BASE="$BACKEND_URL"; fi
-          perl -0777 -pe "s|static const String baseUrl = ['\"](.+?)['\"];|static const String baseUrl = '$TARGET_BASE';|g" -i airavat_flutter/lib/config/backend_config.dart
-          perl -0777 -pe "s|const SMPL_API_BASE = (.+);|const SMPL_API_BASE = '$TARGET_BASE';|g" -i airavat_flutter/web/viewer/index.html
-          # Also update twin3d and Firebase functions proxy if present
-          if [ -f twin3d/src/main.js ]; then
-            perl -0777 -pe "s|const SMPL_API_BASE = (.+);|const SMPL_API_BASE = '$TARGET_BASE';|g" -i twin3d/src/main.js
+          echo "BACKEND_URL is: $BACKEND_URL"
+          if [ -z "$BACKEND_URL" ]; then
+            echo "ERROR: BACKEND_URL is empty!"
+            exit 1
           fi
-          if [ -f functions/index.js ]; then
-            perl -0777 -pe "s|const SMPL_API_BASE = (.+);|const SMPL_API_BASE = '$TARGET_BASE';|g" -i functions/index.js
-          fi
-
-      - name: Verify no stale backend URLs remain
-        run: |
-          echo "Scanning for stale run.app URLs after injection..."
-          ! grep -R --line-number --color=never -E 'https://[A-Za-z0-9-]+-uc\.a\.run\.app' . || true
+          
+          # Update Flutter config
+          echo "Updating backend_config.dart..."
+          sed -i "s|static const String baseUrl = '[^']*';|static const String baseUrl = '$BACKEND_URL';|g" airavat_flutter/lib/config/backend_config.dart
+          
+          # Update web viewer
+          echo "Updating viewer/index.html..."
+          sed -i "s|const SMPL_API_BASE = '[^']*';|const SMPL_API_BASE = '$BACKEND_URL';|g" airavat_flutter/web/viewer/index.html
+          
+          # Show what we updated
+          echo "Updated backend_config.dart:"
+          grep "baseUrl" airavat_flutter/lib/config/backend_config.dart || echo "No baseUrl found"
+          echo "Updated viewer/index.html:"
+          grep "SMPL_API_BASE" airavat_flutter/web/viewer/index.html || echo "No SMPL_API_BASE found"
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -220,7 +223,9 @@ jobs:
         working-directory: airavat_flutter
         run: |
           flutter pub get
-          flutter build web --release --pwa-strategy=none
+          flutter clean
+          flutter pub get
+          flutter build web --release --pwa-strategy=none --verbose
 
       - name: Install Firebase CLI
         run: npm i -g firebase-tools
