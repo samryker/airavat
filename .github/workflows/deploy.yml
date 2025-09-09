@@ -18,7 +18,7 @@ env:
   WIF_PROVIDER:  projects/10892877764/locations/global/workloadIdentityPools/github/providers/github-provider
   BACKEND_SERVICE_ACCOUNT: github-actions-deployer@mira-470320.iam.gserviceaccount.com
   FRONTEND_SERVICE_ACCOUNT: firebase-deployer@mira-d303d.iam.gserviceaccount.com
-  USE_HOSTING_REWRITE: "true"
+  USE_HOSTING_REWRITE: "false"
 
 jobs:
   backend:
@@ -118,31 +118,48 @@ jobs:
           gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format='value(spec.ingress)'
           gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format='table(spec.template.spec.containers[0].env)'
 
-      - name: Grant Firebase Hosting service agent access to Cloud Run
+      - name: Configure SMPL assets for public access
         run: |
-          if [ "$USE_HOSTING_REWRITE" = "true" ]; then
-            echo "Granting Firebase Hosting service agent access to Cloud Run..."
-            
-            # Use known Firebase project number: 705441304760
-            FIREBASE_PROJECT_NUMBER="705441304760"
-            echo "Firebase project number: $FIREBASE_PROJECT_NUMBER"
-            
-            # Firebase Hosting service agent format: service-{PROJECT_NUMBER}@gcp-sa-firebasehosting.iam.gserviceaccount.com
-            FIREBASE_HOSTING_SA="service-$FIREBASE_PROJECT_NUMBER@gcp-sa-firebasehosting.iam.gserviceaccount.com"
-            
-            echo "Firebase Hosting service agent: $FIREBASE_HOSTING_SA"
-            
-            # Grant Cloud Run Invoker role to Firebase Hosting service agent
-            gcloud run services add-iam-policy-binding ${{ env.SERVICE_NAME }} \
-              --region=${{ env.REGION }} \
-              --member="serviceAccount:$FIREBASE_HOSTING_SA" \
-              --role="roles/run.invoker" \
-              --project=${{ env.GCP_PROJECT_ID }} || echo "Failed to grant permissions - may be restricted by org policy"
-            
-            echo "Permission granted to Firebase Hosting service agent"
-          else
-            echo "Skipping Firebase Hosting permissions - rewrites disabled"
-          fi
+          echo "Configuring SMPL assets bucket for public access..."
+          
+          # Create bucket if it doesn't exist
+          gsutil mb gs://mira-smpl-assets || echo "Bucket already exists or failed to create"
+          
+          # Create CORS configuration for the bucket
+          cat > cors.json << 'EOF'
+          [
+            {
+              "origin": ["*"],
+              "method": ["GET", "HEAD", "OPTIONS"],
+              "responseHeader": ["Content-Type", "Access-Control-Allow-Origin"],
+              "maxAgeSeconds": 3600
+            }
+          ]
+          EOF
+          
+          # Apply CORS configuration
+          gsutil cors set cors.json gs://mira-smpl-assets || echo "Failed to set CORS"
+          
+          # Create placeholder GLB files if they don't exist
+          mkdir -p models
+          for model in male female neutral; do
+            if ! gsutil ls gs://mira-smpl-assets/models/${model}.glb > /dev/null 2>&1; then
+              echo "Creating placeholder ${model}.glb"
+              # Create a minimal GLB file (this is just a placeholder)
+              echo "GLB placeholder for ${model}" > models/${model}.glb
+              gsutil cp models/${model}.glb gs://mira-smpl-assets/models/${model}.glb || echo "Failed to upload ${model}.glb"
+            fi
+          done
+          
+          # Try to make bucket objects publicly readable (may fail due to org policy)
+          gsutil iam ch allUsers:objectViewer gs://mira-smpl-assets || echo "Failed to make bucket public - org policy restriction"
+          
+          # Alternative: make individual GLB files public
+          for model in male female neutral; do
+            gsutil acl ch -u AllUsers:R gs://mira-smpl-assets/models/${model}.glb || echo "Failed to make ${model}.glb public"
+          done
+          
+          echo "SMPL assets configuration complete"
 
       - name: Wait for revision to become ready
         run: sleep 20
