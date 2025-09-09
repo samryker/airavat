@@ -118,6 +118,38 @@ jobs:
           gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format='value(spec.ingress)'
           gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format='table(spec.template.spec.containers[0].env)'
 
+      - name: Grant Firebase Hosting service agent access to Cloud Run
+        run: |
+          if [ "$USE_HOSTING_REWRITE" = "true" ]; then
+            echo "Granting Firebase Hosting service agent access to Cloud Run..."
+            
+            # Get project number for Firebase project
+            FIREBASE_PROJECT_NUMBER=$(gcloud projects describe ${{ env.FIREBASE_PROJECT_ID }} --format='value(projectNumber)')
+            echo "Firebase project number: $FIREBASE_PROJECT_NUMBER"
+            
+            # Try multiple possible Firebase Hosting service agent formats
+            FIREBASE_HOSTING_SA="firebase-hosting-sa@${{ env.FIREBASE_PROJECT_ID }}.iam.gserviceaccount.com"
+            FIREBASE_HOSTING_SA_ALT="firebase-hosting@${{ env.FIREBASE_PROJECT_ID }}.iam.gserviceaccount.com"
+            FIREBASE_ADMINSDK_SA="firebase-adminsdk-$(echo $FIREBASE_PROJECT_NUMBER | tail -c 7)@${{ env.FIREBASE_PROJECT_ID }}.iam.gserviceaccount.com"
+            
+            echo "Trying Firebase Hosting service agents..."
+            echo "1. $FIREBASE_HOSTING_SA"
+            echo "2. $FIREBASE_HOSTING_SA_ALT" 
+            echo "3. $FIREBASE_ADMINSDK_SA"
+            
+            # Try to grant permissions to each possible service agent
+            for SA in "$FIREBASE_HOSTING_SA" "$FIREBASE_HOSTING_SA_ALT" "$FIREBASE_ADMINSDK_SA"; do
+              echo "Granting permissions to: $SA"
+              gcloud run services add-iam-policy-binding ${{ env.SERVICE_NAME }} \
+                --region=${{ env.REGION }} \
+                --member="serviceAccount:$SA" \
+                --role="roles/run.invoker" \
+                --project=${{ env.GCP_PROJECT_ID }} || echo "Failed for $SA - may not exist or be restricted"
+            done
+          else
+            echo "Skipping Firebase Hosting permissions - rewrites disabled"
+          fi
+
       - name: Wait for revision to become ready
         run: sleep 20
 
