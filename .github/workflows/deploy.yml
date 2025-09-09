@@ -18,7 +18,7 @@ env:
   WIF_PROVIDER:  projects/10892877764/locations/global/workloadIdentityPools/github/providers/github-provider
   BACKEND_SERVICE_ACCOUNT: github-actions-deployer@mira-470320.iam.gserviceaccount.com
   FRONTEND_SERVICE_ACCOUNT: firebase-deployer@mira-d303d.iam.gserviceaccount.com
-  USE_HOSTING_REWRITE: "false"
+  USE_HOSTING_REWRITE: "true"
 
 jobs:
   backend:
@@ -171,19 +171,26 @@ jobs:
 
       - name: Inject backend URL into Flutter config
         run: |
-          echo "BACKEND_URL is: $BACKEND_URL"
-          if [ -z "$BACKEND_URL" ]; then
-            echo "ERROR: BACKEND_URL is empty!"
+          if [ "$USE_HOSTING_REWRITE" = "true" ]; then
+            TARGET_URL="/api"
+            echo "Using Firebase Hosting rewrite: $TARGET_URL"
+          else
+            TARGET_URL="$BACKEND_URL"
+            echo "Using direct Cloud Run URL: $TARGET_URL"
+          fi
+          
+          if [ -z "$TARGET_URL" ]; then
+            echo "ERROR: TARGET_URL is empty!"
             exit 1
           fi
           
           # Update Flutter config
           echo "Updating backend_config.dart..."
-          sed -i "s|static const String baseUrl = '[^']*';|static const String baseUrl = '$BACKEND_URL';|g" airavat_flutter/lib/config/backend_config.dart
+          sed -i "s|static const String baseUrl = '[^']*';|static const String baseUrl = '$TARGET_URL';|g" airavat_flutter/lib/config/backend_config.dart
           
           # Update web viewer
           echo "Updating viewer/index.html..."
-          sed -i "s|const SMPL_API_BASE = '[^']*';|const SMPL_API_BASE = '$BACKEND_URL';|g" airavat_flutter/web/viewer/index.html
+          sed -i "s|const SMPL_API_BASE = '[^']*';|const SMPL_API_BASE = '$TARGET_URL';|g" airavat_flutter/web/viewer/index.html
           
           # Show what we updated
           echo "Updated backend_config.dart:"
