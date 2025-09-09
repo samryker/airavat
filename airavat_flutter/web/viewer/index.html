@@ -69,7 +69,8 @@
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-    const SMPL_API_BASE = 'https://airavat-backend-u3hyo7liyq-uc.a.run.app';
+    const SMPL_API_BASE = 'https://airavat-backend-f255cpkfda-uc.a.run.app';
+    const SMPL_ASSETS_BASE_URL = 'https://storage.googleapis.com/mira-smpl-assets/models';
 
     let scene, camera, renderer, controls;
     let currentMesh = null;
@@ -115,31 +116,34 @@
       const beta1 = Number(beta1R?.value || 0.4);
       setStatus('Loading SMPL...');
       try {
-        const h = await fetch(`${SMPL_API_BASE}/smpl/health`);
-        if (!h.ok) throw new Error(`Health failed: ${h.status}`);
-
-        const params = new URLSearchParams({
-          patient_id: 'viewer',
-          height: String(height),
-          weight: String(weight),
-          gender: model === 'neutral' ? 'neutral' : model,
-          model: model,
-          beta1: String(beta1)
-        });
-        const res = await fetch(`${SMPL_API_BASE}/smpl/generate?${params.toString()}`, { mode: 'cors' });
-        if (!res.ok) throw new Error(`Generate failed: ${res.status}`);
-        const smpl = await res.json();
-
-        if (smpl.asset_url) {
-          await loadGLB(smpl.asset_url, smpl.parameters);
-          setStatus(`Loaded ${model}.glb`);
-        } else {
-          await loadPlaceholder(smpl.parameters);
-          setStatus('Loaded placeholder');
-        }
+        // Load GLB directly from public GCS bucket (bypasses Cloud Run auth)
+        const glbUrl = `${SMPL_ASSETS_BASE_URL}/${model}.glb`;
+        const parameters = {
+          height_cm: height,
+          weight_kg: weight,
+          gender: model,
+          beta1: beta1,
+          bmi: height > 0 ? Math.round(weight / ((height / 100.0) ** 2) * 10) / 10 : null
+        };
+        
+        await loadGLB(glbUrl, parameters);
+        setStatus(`Loaded ${model}.glb from GCS`);
       } catch (e) {
-        console.error(e);
-        setStatus('Error loading SMPL');
+        console.error('Error loading SMPL from GCS:', e);
+        try {
+          // Fallback to placeholder if GLB fails
+          const parameters = {
+            height_cm: height,
+            weight_kg: weight,
+            gender: model,
+            beta1: beta1
+          };
+          await loadPlaceholder(parameters);
+          setStatus('Loaded placeholder (GLB failed)');
+        } catch (fallbackError) {
+          console.error('Fallback also failed:', fallbackError);
+          setStatus('Error loading SMPL');
+        }
       }
     }
 
@@ -241,8 +245,14 @@
       await fetchAndLoad();
     }
     window.getSMPLHealth = async function() {
-      const r = await fetch(`${SMPL_API_BASE}/smpl/health`);
-      return r.ok ? r.json() : { status: 'error' };
+      // Check if GCS assets are accessible
+      try {
+        const testUrl = `${SMPL_ASSETS_BASE_URL}/male.glb`;
+        const response = await fetch(testUrl, { method: 'HEAD' });
+        return response.ok ? { status: 'ok', assets_available: true } : { status: 'error', assets_available: false };
+      } catch (e) {
+        return { status: 'error', assets_available: false, error: e.message };
+      }
     }
   </script>
 </body>
