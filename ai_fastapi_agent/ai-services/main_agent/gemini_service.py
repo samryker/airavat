@@ -14,15 +14,20 @@ logging.basicConfig(level=logging.INFO)
 # Load environment variables
 load_dotenv()
 
-# Disable Gemini service - API key removed for security
-logger.warning("Gemini service disabled - API key removed for security reasons.")
+# Initialize Gemini service
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# Initialize Gemini client (disabled)
-model = None
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel("gemini-1.5-pro")
+    logger.info("Gemini service initialized successfully")
+else:
+    model = None
+    logger.warning("Gemini API key not found - service will use fallback responses")
 
 def is_gemini_available() -> bool:
     """Check if Gemini API is available and configured."""
-    return False
+    return model is not None
 
 def format_firestore_timestamp(timestamp_obj) -> str:
     """Safely formats a Firestore Timestamp (or datetime object) to a string."""
@@ -116,20 +121,80 @@ def format_patient_record_for_prompt(patient_record: Dict[str, Any]) -> List[str
 
 async def get_treatment_suggestion_from_gemini(patient_query: PatientQuery, patient_context: Dict[str, Any] = None) -> StructuredGeminiOutput:
     """
-    Get treatment suggestion from Gemini API (DISABLED - returns fallback response)
+    Get treatment suggestion from Gemini API
     """
-    logger.warning("Gemini service is disabled. Returning fallback response.")
+    if not is_gemini_available():
+        logger.warning("Gemini service is not available. Returning fallback response.")
+        
+        # Return a fallback response
+        return StructuredGeminiOutput(
+            text="I'm currently unable to process your medical query. Please consult with a healthcare professional for personalized medical advice.",
+            features=GeminiResponseFeatures(
+                category="medical_query",
+                urgency="medium",
+                keywords=patient_query.symptoms if patient_query.symptoms else [],
+                actionable_steps_present=False
+            )
+        )
     
-    # Return a fallback response
-    return StructuredGeminiOutput(
-        text="I'm currently unable to process your medical query. Please consult with a healthcare professional for personalized medical advice.",
-        features=GeminiResponseFeatures(
+    try:
+        # Create comprehensive prompt for medical consultation
+        prompt = f"""You are a knowledgeable medical AI assistant. Provide helpful, accurate medical information while emphasizing the importance of professional medical consultation.
+
+Patient Query: {patient_query.query_text}
+Patient ID: {patient_query.patient_id}
+Symptoms: {', '.join(patient_query.symptoms) if patient_query.symptoms else 'None specified'}
+
+Context: {json.dumps(patient_context, default=str) if patient_context else 'No additional context provided'}
+
+Please provide:
+1. A helpful and informative response to the patient's query
+2. Relevant medical information and insights
+3. Appropriate recommendations for next steps
+4. Important disclaimers about consulting healthcare professionals
+
+Remember to:
+- Be empathetic and supportive
+- Provide accurate medical information
+- Always recommend professional medical consultation for serious concerns
+- Avoid giving specific medical diagnoses
+- Focus on education and general guidance
+
+Respond in a conversational, caring tone."""
+
+        response = await model.generate_content_async(prompt)
+        response_text = response.text if response else "I apologize, but I'm having trouble processing your request right now. Please try again or consult with a healthcare professional."
+        
+        # Extract keywords from the response and query
+        keywords = patient_query.symptoms if patient_query.symptoms else []
+        if patient_query.query_text:
+            # Simple keyword extraction (could be enhanced)
+            query_words = patient_query.query_text.lower().split()
+            medical_keywords = [word for word in query_words if len(word) > 3]
+            keywords.extend(medical_keywords[:5])  # Limit to 5 additional keywords
+        
+        features = GeminiResponseFeatures(
             category="medical_query",
             urgency="medium",
-            keywords=patient_query.symptoms if patient_query.symptoms else [],
-            actionable_steps_present=False
+            keywords=list(set(keywords)),  # Remove duplicates
+            actionable_steps_present=True
         )
-    )
+        
+        return StructuredGeminiOutput(text=response_text, features=features)
+        
+    except Exception as e:
+        logger.error(f"Error calling Gemini API: {e}")
+        
+        # Return fallback response on error
+        return StructuredGeminiOutput(
+            text="I apologize, but I'm experiencing technical difficulties right now. Please try again later or consult with a healthcare professional for immediate assistance.",
+            features=GeminiResponseFeatures(
+                category="system_error",
+                urgency="medium",
+                keywords=["technical_issue"],
+                actionable_steps_present=True
+            )
+        )
 
 # Example usage (can be run directly for testing if needed)
 # if __name__ == '__main__':

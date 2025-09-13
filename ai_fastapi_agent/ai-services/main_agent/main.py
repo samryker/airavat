@@ -1061,12 +1061,23 @@ async def analyze_file(file: UploadFile = File(...)):
 
 @app.get("/agent/check_gemini_config")
 async def check_gemini_config():
-    """Check if Gemini API is properly configured (DISABLED)"""
-    return {
-        "gemini_configured": False,
-        "message": "Gemini API service has been disabled for security reasons",
-        "status": "disabled"
-    }
+    """Check if Gemini API is properly configured"""
+    try:
+        from .gemini_service import is_gemini_available
+        gemini_available = is_gemini_available()
+        
+        return {
+            "gemini_configured": gemini_available,
+            "message": "Gemini API is properly configured and available" if gemini_available else "Gemini API key not found or invalid",
+            "status": "enabled" if gemini_available else "disabled",
+            "api_key_present": bool(os.getenv("GEMINI_API_KEY"))
+        }
+    except Exception as e:
+        return {
+            "gemini_configured": False,
+            "message": f"Error checking Gemini configuration: {str(e)}",
+            "status": "error"
+        }
 
 # To run this app directly (for development):
 # uvicorn ai_fastapi_agent.ai-services.main_agent.main:app --reload

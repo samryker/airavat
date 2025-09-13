@@ -18,11 +18,16 @@ logger = logging.getLogger("api")
 # Load environment variables
 load_dotenv()
 
-# Disable Gemini for security reasons
-logger.warning("Gemini API disabled for security reasons - API key removed")
+# Initialize Gemini client
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# Initialize Gemini client (disabled)
-model = None
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel("gemini-1.5-pro")
+    logger.info("Gemini client initialized successfully in MCP agent")
+else:
+    model = None
+    logger.warning("Gemini API key not found - MCP agent will use fallback responses")
 
 # Try to import MCP dependencies, but handle gracefully if not available
 try:
@@ -55,10 +60,12 @@ except ImportError:
 from .data_models import PatientQuery, AgentResponse, TreatmentSuggestion
 from .firestore_service import FirestoreService
 
-# Initialize Gemini (DISABLED for security)
-# GEMINI_API_KEY removed for security reasons
-gemini_model = None
-print("⚠️ Gemini API disabled for security reasons. Using fallback responses.")
+# Initialize Gemini model reference
+gemini_model = model
+if gemini_model:
+    print("✅ Gemini API initialized successfully. AI responses enabled.")
+else:
+    print("⚠️ Gemini API not available. Using fallback responses.")
 
 # Message classes for compatibility
 class HumanMessage:
