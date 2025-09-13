@@ -115,8 +115,9 @@
       const weight = Number(weightR?.value || 70);
       const beta1 = Number(beta1R?.value || 0.4);
       setStatus('Loading SMPL...');
+      
       try {
-        // Try to get signed URL from backend first
+        // Try to get signed URL from backend first with proper CORS handling
         const params = new URLSearchParams({
           patient_id: 'viewer',
           height: String(height),
@@ -126,14 +127,56 @@
           beta1: String(beta1)
         });
         
-        const response = await fetch(`${SMPL_API_BASE}/smpl/generate?${params.toString()}`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.asset_url) {
-            await loadGLB(data.asset_url, data.parameters);
-            setStatus(`Loaded ${model}.glb via backend`);
-            return;
+        // First try with /api rewrite path (Firebase Hosting)
+        let response = null;
+        let backendUrl = `/api/smpl/generate?${params.toString()}`;
+        
+        try {
+          response = await fetch(backendUrl, {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+            },
+            mode: 'cors',
+            credentials: 'omit'
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.asset_url) {
+              await loadGLB(data.asset_url, data.parameters);
+              setStatus(`Loaded ${model}.glb via Firebase rewrite`);
+              return;
+            }
           }
+        } catch (rewriteError) {
+          console.log('Firebase rewrite failed, trying direct Cloud Run:', rewriteError);
+        }
+        
+        // Fallback to direct Cloud Run URL
+        try {
+          backendUrl = `${SMPL_API_BASE}/smpl/generate?${params.toString()}`;
+          response = await fetch(backendUrl, {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+            },
+            mode: 'cors',
+            credentials: 'omit'
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.asset_url) {
+              await loadGLB(data.asset_url, data.parameters);
+              setStatus(`Loaded ${model}.glb via direct backend`);
+              return;
+            }
+          }
+        } catch (directError) {
+          console.log('Direct Cloud Run failed:', directError);
         }
         
         // Fallback to direct GCS access
@@ -146,12 +189,21 @@
           bmi: height > 0 ? Math.round(weight / ((height / 100.0) ** 2) * 10) / 10 : null
         };
         
-        await loadGLB(glbUrl, parameters);
-        setStatus(`Loaded ${model}.glb from GCS fallback`);
+        try {
+          await loadGLB(glbUrl, parameters);
+          setStatus(`Loaded ${model}.glb from GCS fallback`);
+          return;
+        } catch (gcsError) {
+          console.log('GCS access failed:', gcsError);
+        }
+        
+        // Final fallback to placeholder
+        await loadPlaceholder(parameters);
+        setStatus('Loaded placeholder (all sources failed)');
+        
       } catch (e) {
         console.error('Error loading SMPL:', e);
         try {
-          // Final fallback to placeholder
           const parameters = {
             height_cm: height,
             weight_kg: weight,
@@ -159,7 +211,7 @@
             beta1: beta1
           };
           await loadPlaceholder(parameters);
-          setStatus('Loaded placeholder (all GLB sources failed)');
+          setStatus('Loaded placeholder (error occurred)');
         } catch (fallbackError) {
           console.error('Fallback also failed:', fallbackError);
           setStatus('Error loading SMPL');

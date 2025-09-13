@@ -89,12 +89,32 @@ use_wildcard = allowed_origins == ["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    # Fallback regex to cover Firebase Hosting and localhost during migrations
-    allow_origin_regex=None if use_wildcard else r"^(https:\/\/[a-zA-Z0-9-]+\.web\.app|https:\/\/[a-zA-Z0-9-]+\.firebaseapp\.com|http:\/\/localhost(?::\d+)?|http:\/\/127\.0\.0\.1(?::\d+)?)$",
+    # Enhanced regex to cover Firebase Hosting and localhost during migrations
+    allow_origin_regex=None if use_wildcard else r"^(https:\/\/[a-zA-Z0-9-]+\.web\.app|https:\/\/[a-zA-Z0-9-]+\.firebaseapp\.com|http:\/\/localhost(?::\d+)?|http:\/\/127\.0\.0\.1(?::\d+)?|https:\/\/storage\.googleapis\.com)$",
     allow_credentials=False if use_wildcard else True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
-    expose_headers=["Content-Type", "Authorization"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
+    allow_headers=[
+        "Content-Type", 
+        "Authorization", 
+        "X-Requested-With", 
+        "Accept", 
+        "Origin",
+        "Access-Control-Request-Method",
+        "Access-Control-Request-Headers",
+        "Cache-Control",
+        "Pragma",
+        "Expires",
+        "Range"
+    ],
+    expose_headers=[
+        "Content-Type", 
+        "Authorization",
+        "Access-Control-Allow-Origin",
+        "Access-Control-Allow-Methods",
+        "Access-Control-Allow-Headers",
+        "Content-Range",
+        "Accept-Ranges"
+    ],
     max_age=86400,
 )
 
@@ -104,7 +124,7 @@ else:
     logger.warning("SMPL router not available; /smpl endpoints will not be served")
 
 # Fallback inline SMPL endpoints (ensure availability in Cloud Run)
-_SMPL_ASSETS_BASE_URL = os.getenv("SMPL_ASSETS_BASE_URL", "")
+_SMPL_ASSETS_BASE_URL = os.getenv("SMPL_ASSETS_BASE_URL", "https://storage.googleapis.com/mira-smpl-assets/models")
 
 @app.get("/smpl/health")
 async def smpl_health_inline():

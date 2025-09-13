@@ -1,13 +1,61 @@
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Request
+from fastapi.responses import FileResponse, JSONResponse
 from typing import Optional, Dict, Any
 import os
 from datetime import datetime
-from fastapi.responses import FileResponse
 
 router = APIRouter(prefix="/smpl", tags=["SMPL"])
 
+# Add CORS headers to all SMPL responses
+@router.middleware("http")
+async def add_cors_headers(request: Request, call_next):
+    response = await call_next(request)
+    
+    # Get the origin from the request
+    origin = request.headers.get("origin")
+    
+    # Allow specific origins or wildcard
+    allowed_origins = [
+        "https://mira-d303d.web.app",
+        "https://mira-d303d.firebaseapp.com",
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+    ]
+    
+    # Check if origin is allowed or if we're using wildcard
+    allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
+    if allowed_origins_env.strip() == "*":
+        response.headers["Access-Control-Allow-Origin"] = "*"
+    elif origin in allowed_origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
+    elif origin and any(domain in origin for domain in [".web.app", ".firebaseapp.com", "localhost", "127.0.0.1"]):
+        response.headers["Access-Control-Allow-Origin"] = origin
+    
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, HEAD"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With, Accept, Origin, Access-Control-Request-Method, Access-Control-Request-Headers, Cache-Control, Pragma, Expires, Range"
+    response.headers["Access-Control-Expose-Headers"] = "Content-Type, Authorization, Access-Control-Allow-Origin, Access-Control-Allow-Methods, Access-Control-Allow-Headers, Content-Range, Accept-Ranges"
+    response.headers["Access-Control-Max-Age"] = "86400"
+    
+    return response
+
+# Handle OPTIONS requests for CORS preflight
+@router.options("/{path:path}")
+async def options_handler(path: str):
+    return JSONResponse(
+        status_code=200,
+        content={"message": "OK"},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, Accept, Origin, Access-Control-Request-Method, Access-Control-Request-Headers, Cache-Control, Pragma, Expires, Range",
+            "Access-Control-Max-Age": "86400",
+        }
+    )
+
 # Base URL to serve static GLB assets (e.g., your Twin3D host or CDN)
-SMPL_ASSETS_BASE_URL = os.getenv("SMPL_ASSETS_BASE_URL", "")  # e.g., https://your-twin-host/models
+SMPL_ASSETS_BASE_URL = os.getenv("SMPL_ASSETS_BASE_URL", "https://storage.googleapis.com/mira-smpl-assets/models")  # e.g., https://your-twin-host/models
 # Local storage path for uploaded SMPL parameter files (npz/pkl)
 SMPL_STORAGE_DIR = os.getenv("SMPL_STORAGE_DIR", os.path.join(os.path.dirname(__file__), "..", "smpl_models"))
 SMPL_STORAGE_DIR = os.path.abspath(SMPL_STORAGE_DIR)
