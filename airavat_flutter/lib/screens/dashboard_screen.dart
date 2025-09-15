@@ -443,6 +443,12 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
           ListTile(
             leading:
+                Icon(Icons.model_training_outlined, color: theme.primaryColor),
+            title: Text('Digital Twin', style: textTheme.bodyMedium),
+            onTap: () => context.go('/digital-twin'),
+          ),
+          ListTile(
+            leading:
                 Icon(Icons.account_circle_outlined, color: theme.primaryColor),
             title: Text('Account', style: textTheme.bodyMedium),
             onTap: () => context.go('/account'),
@@ -1226,6 +1232,15 @@ class _DashboardScreenState extends State<DashboardScreen>
             onTap: () {
               Navigator.of(context).pop();
               context.go('/chat');
+            },
+          ),
+          ListTile(
+            leading:
+                Icon(Icons.model_training_outlined, color: theme.primaryColor),
+            title: Text('Digital Twin', style: textTheme.bodyLarge),
+            onTap: () {
+              Navigator.of(context).pop();
+              context.go('/digital-twin');
             },
           ),
           ListTile(
