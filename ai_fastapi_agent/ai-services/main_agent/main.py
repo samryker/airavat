@@ -53,6 +53,23 @@ except Exception as e1:
         # Set up basic logger early to record why SMPL failed
         logging.getLogger("api").warning(f"SMPL router import failed: top-level={e1}; relative={e2}")
 
+# Try both import styles for Digital Twin router (top-level and relative)
+DIGITAL_TWIN_AVAILABLE = False
+digital_twin_router = None
+try:
+    from digital_twin_service.router import router as digital_twin_router
+    DIGITAL_TWIN_AVAILABLE = True
+except Exception as e1:
+    try:
+        from ..digital_twin_service.router import router as digital_twin_router
+        DIGITAL_TWIN_AVAILABLE = True
+    except Exception as e2:
+        digital_twin_router = None
+        DIGITAL_TWIN_AVAILABLE = False
+        logging.getLogger("api").warning(
+            f"Digital Twin router import failed: top-level={e1}; relative={e2}"
+        )
+
 load_dotenv() # Load environment variables from .env
 
 # Setup logging for the main application
@@ -117,6 +134,11 @@ app.add_middleware(
     ],
     max_age=86400,
 )
+
+if DIGITAL_TWIN_AVAILABLE and digital_twin_router:
+    app.include_router(digital_twin_router)
+else:
+    logger.warning("Digital Twin router not available; /digital_twin endpoints will not be served")
 
 if SMPL_AVAILABLE and smpl_router:
     app.include_router(smpl_router)
