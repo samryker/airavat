@@ -1,6 +1,7 @@
 from .data_models import PatientQuery, AgentResponse, TreatmentSuggestion, StructuredGeminiOutput, GeminiResponseFeatures, FeedbackDataModel, NotificationRequest
 from .gemini_service import get_treatment_suggestion_from_gemini
 from .firestore_service import FirestoreService
+from .context_retriever import ContextRetriever
 from .planner import generate_dynamic_plan
 from .rl_service import PatientRLAgent, determine_severity_level, calculate_reward
 from .mcp_medical_agent import MCPMedicalAgent
@@ -39,6 +40,12 @@ class MedicalAgent:
             logger.info("MedicalAgent initialized with Firestore client.")
             self.firestore_service = FirestoreService(db)
             self.user_data_service = UserDataService(db)
+            # Lightweight RAG-style retriever over patient Firestore data
+            try:
+                self.context_retriever = ContextRetriever(self.firestore_service)
+            except Exception as e:
+                logger.warning(f"ContextRetriever unavailable: {e}")
+                self.context_retriever = None
             
             # Initialize notification and email services
             try:
@@ -60,6 +67,7 @@ class MedicalAgent:
             self.user_data_service = None
             self.notification_service = None
             self.email_service = None
+            self.context_retriever = None
             
         if self.mcp_agent:
             logger.info("MedicalAgent initialized with MCP agent for lifelong memory.")
@@ -265,7 +273,21 @@ class MedicalAgent:
             
         except Exception as e:
             logger.error(f"Error getting comprehensive context: {e}")
-        
+
+        # Trim/contextualize memory budget before LLM call (token-efficient)
+        try:
+            if self.context_retriever:
+                trimmed = await self.context_retriever.retrieve(
+                    patient_query.patient_id,
+                    patient_query.query_text,
+                    max_chars=6000,
+                )
+                # Attach compact context blob for the LLM prompt
+                context['trimmed_context_text'] = trimmed.get('trimmed_context_text')
+                context['trimmed_context_tokens'] = trimmed.get('approx_tokens')
+        except Exception as e:
+            logger.warning(f"ContextRetriever failed, proceeding without trim: {e}")
+
         return context
 
     async def _get_gemini_response(self, patient_query: PatientQuery, patient_context: Dict[str, Any]) -> AgentResponse:
@@ -533,10 +555,17 @@ class MedicalAgent:
             return
             
         try:
+            # Truncate long responses to reduce storage/token reuse costs
+            resp_text = response.response_text or ""
+            if len(resp_text) > 1500:
+                resp_preview = resp_text[:1500] + "..."
+            else:
+                resp_preview = resp_text
             response_data = {
                 'patient_id': patient_id,
                 'request_id': response.request_id,
-                'response_text': response.response_text,
+                'response_text': resp_preview,
+                'truncated': len(resp_text) > 1500,
                 'timestamp': datetime.datetime.utcnow(),
                 'suggestions_count': len(response.suggestions) if response.suggestions else 0
             }
