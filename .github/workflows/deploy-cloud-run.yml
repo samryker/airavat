@@ -3,6 +3,7 @@ name: Deploy to Cloud Run
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:
 
 env:
   SERVICE_NAME: airavat-api
@@ -41,6 +42,19 @@ jobs:
           docker build -t $IMAGE -f Dockerfile .
           docker push $IMAGE
 
+      - name: Prepare Gemini API key
+        run: |
+          RAW_KEY='${{ secrets.GEMINI }}'
+          # Strip common prefixes if user pasted KEY=value
+          CLEAN_KEY="${RAW_KEY#GEMINI_API_KEY=}"
+          CLEAN_KEY="${CLEAN_KEY#GEMINI=}"
+          CLEAN_KEY="${CLEAN_KEY#API_KEY=}"
+          if [ -z "$CLEAN_KEY" ]; then
+            echo "Gemini key is empty; check the GEMINI secret" >&2
+            exit 1
+          fi
+          echo "GEMINI_API_KEY=$CLEAN_KEY" >> $GITHUB_ENV
+
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy $SERVICE_NAME \
@@ -49,7 +63,7 @@ jobs:
             --region $REGION \
             --allow-unauthenticated \
             --port 8080 \
-            --set-env-vars GEMINI=${{ secrets.GEMINI_API_KEY }},GEMINI_DISABLED=false
+            --set-env-vars GEMINI_API_KEY=$GEMINI_API_KEY,GEMINI_DISABLED=false
 
       - name: Verify Gemini config endpoint
         run: |
