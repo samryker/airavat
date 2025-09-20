@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../services/twin_service.dart';
+import '../services/digital_twin_service.dart';
 import '../widgets/webgl_twin_widget.dart';
 import '../providers/theme_provider.dart';
 import '../config/theme_config.dart';
@@ -110,14 +111,53 @@ class _DashboardScreenState extends State<DashboardScreen>
 
       // Load user biomarkers and twin customization
       try {
-        final biomarkers = await TwinService.getLatestBiomarkers(user.uid);
+        // Try to get biomarkers from Firestore first
+        Map<String, dynamic>? biomarkers =
+            await TwinService.getLatestBiomarkers(user.uid);
+
+        // If no biomarkers in Firestore, try Digital Twin endpoint
+        if (biomarkers == null) {
+          try {
+            final liveTwinData =
+                await DigitalTwinService.getLiveTwinData(patientId: user.uid);
+            biomarkers = liveTwinData['biomarkers'] as Map<String, dynamic>?;
+            print('📊 Loaded biomarkers from Digital Twin: $biomarkers');
+          } catch (e) {
+            print('No biomarkers from Digital Twin: $e');
+          }
+        }
+
         final twinCustomization =
             await TwinService.getTwinCustomization(user.uid);
 
-        if (biomarkers != null) {
+        if (biomarkers != null && biomarkers.isNotEmpty) {
           setState(() {
             _userBiomarkers = biomarkers;
           });
+          print('✅ Dashboard loaded ${biomarkers.length} biomarkers for user');
+        } else {
+          print(
+              '⚠️ No biomarkers found for user ${user.uid}, creating sample data');
+          // Create sample biomarkers for demo and store in Digital Twin
+          final sampleBiomarkers = {
+            'glucose': 95.0,
+            'cholesterol': 180.0,
+            'heart_rate': 72.0,
+            'hemoglobin': 14.5,
+            'blood_pressure_systolic': 125.0,
+            'oxygen_saturation': 98.0
+          };
+
+          try {
+            await DigitalTwinService.updateBiomarkers(sampleBiomarkers,
+                patientId: user.uid);
+            setState(() {
+              _userBiomarkers = sampleBiomarkers;
+            });
+            print('✅ Created sample biomarkers for user');
+          } catch (e) {
+            print('Error creating sample biomarkers: $e');
+          }
         }
 
         // Get modelUrl from twinCustomization
