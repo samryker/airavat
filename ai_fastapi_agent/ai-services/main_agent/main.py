@@ -277,15 +277,16 @@ except Exception as e:
 # In a production system, you might manage this differently (e.g., with dependency injection).
 medical_agent = MedicalAgent(db=db, mcp_agent=mcp_agent) # Pass Firestore client and MCP agent to the agent
 
-# Initialize additional services (optional)
+// Initialize additional services (optional)
 genetic_service = None
 notification_service = None
 user_data_service = None
 
-if GENETIC_AVAILABLE and db:
+# Always initialize GeneticAnalysisService if available, even without Firestore
+if GENETIC_AVAILABLE:
     try:
         genetic_service = GeneticAnalysisService(db=db)
-        logger.info("Genetic Analysis Service initialized successfully.")
+        logger.info("Genetic Analysis Service initialized successfully (serverless mode supported).")
     except Exception as e:
         logger.warning(f"Failed to initialize Genetic Analysis Service: {e}")
 
