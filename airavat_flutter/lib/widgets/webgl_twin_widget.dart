@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'dart:html' as html;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../services/digital_twin_service.dart';
 
 class WebGLTwinWidget extends StatefulWidget {
   final String? userId;
@@ -92,12 +93,9 @@ class _WebGLTwinWidgetState extends State<WebGLTwinWidget> {
 
         // Post initial parameters once iframe loads
         iframe.onLoad.listen((_) async {
-          _postSmplUpdate(
-            gender: widget.initialGender,
-            height: widget.initialHeightCm,
-            weight: widget.initialWeightKg,
-            beta1: widget.initialBeta1,
-          );
+          // Load patient with biomarkers
+          await _loadPatientWithBiomarkers();
+
           // If no initial gender provided, load saved model from Firestore
           if (widget.initialGender == null || widget.initialGender!.isEmpty) {
             await _loadSavedModelAndPost();
@@ -157,6 +155,56 @@ class _WebGLTwinWidgetState extends State<WebGLTwinWidget> {
         'profile': {'smpl_model': model}
       }, SetOptions(merge: true));
     } catch (_) {}
+  }
+
+  Future<void> _loadPatientWithBiomarkers() async {
+    if (_iframeRef?.contentWindow == null || widget.userId == null) return;
+
+    try {
+      // Get live twin data including biomarkers
+      final liveTwinData =
+          await DigitalTwinService.getLiveTwinData(patientId: widget.userId);
+
+      final profile = {
+        'patientId': widget.userId,
+        'height': widget.initialHeightCm ??
+            liveTwinData['smpl_data']?['height_cm'] ??
+            170.0,
+        'weight': widget.initialWeightKg ??
+            liveTwinData['smpl_data']?['weight_kg'] ??
+            70.0,
+        'gender': widget.initialGender ?? 'neutral',
+      };
+
+      // Load patient in viewer
+      _iframeRef!.contentWindow!.postMessage({
+        'type': 'loadPatient',
+        'patientId': widget.userId,
+        'profile': profile,
+      }, '*');
+
+      // Send biomarkers if available
+      final biomarkers =
+          liveTwinData['biomarkers'] ?? widget.userBiomarkers ?? {};
+      if (biomarkers.isNotEmpty) {
+        _iframeRef!.contentWindow!.postMessage({
+          'type': 'updateBiomarkers',
+          'biomarkers': biomarkers,
+        }, '*');
+      }
+
+      print(
+          '✅ Loaded patient ${widget.userId} with ${biomarkers.length} biomarkers');
+    } catch (e) {
+      print('Error loading patient biomarkers: $e');
+      // Fallback to basic SMPL update
+      _postSmplUpdate(
+        gender: widget.initialGender,
+        height: widget.initialHeightCm,
+        weight: widget.initialWeightKg,
+        beta1: widget.initialBeta1,
+      );
+    }
   }
 
   void _postSmplUpdate({

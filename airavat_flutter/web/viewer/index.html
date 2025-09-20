@@ -69,11 +69,15 @@
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-    const SMPL_API_BASE = 'https://airavat-backend-f255cpkfda-uc.a.run.app';
+    const SMPL_API_BASE = 'https://airavat-backend-10892877764.us-central1.run.app';
     const SMPL_ASSETS_BASE_URL = 'https://storage.googleapis.com/mira-smpl-assets/models';
 
     let scene, camera, renderer, controls;
     let currentMesh = null;
+    let biomarkerOverlays = new Map();
+    let currentPatientId = null;
+    let raycaster = new THREE.Raycaster();
+    let mouse = new THREE.Vector2();
 
     const modelSel = document.getElementById('model');
     const heightR = document.getElementById('height');
@@ -106,6 +110,16 @@
         if (p.weight) weightR.value = weightN.value = p.weight;
         if (typeof p.beta1 === 'number') beta1R.value = beta1N.value = p.beta1;
         await fetchAndLoad();
+      } else if (data?.type === 'loadPatient') {
+        currentPatientId = data.patientId;
+        const profile = data.profile || {};
+        if (profile.height) heightR.value = heightN.value = profile.height;
+        if (profile.weight) weightR.value = weightN.value = profile.weight;
+        if (profile.gender) modelSel.value = profile.gender;
+        await fetchAndLoad();
+        await loadPatientBiomarkers(data.patientId);
+      } else if (data?.type === 'updateBiomarkers') {
+        await addBiomarkerOverlays(data.biomarkers);
       }
     });
 
@@ -287,8 +301,16 @@
       controls.maxDistance = 10.0; // tighter zoom range
       controls.maxPolarAngle = Math.PI * 0.55; // limit tilt for portrait view
 
+      // Setup biomarker interaction
+      setupBiomarkerInteraction();
+
       window.addEventListener('resize', onResize);
-      (function animate(){ requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); })();
+      (function animate(){ 
+        requestAnimationFrame(animate); 
+        controls.update(); 
+        animateBiomarkers(); // Add biomarker animations
+        renderer.render(scene, camera); 
+      })();
     }
 
     function onResize() {
@@ -302,20 +324,267 @@
       if (el) el.textContent = text;
     }
 
+    // === BIOMARKER OVERLAY FUNCTIONS ===
+    
+    async function loadPatientBiomarkers(patientId) {
+      try {
+        setStatus(`Loading biomarkers for ${patientId}...`);
+        
+        // Try to get biomarkers from digital twin first
+        const twinResponse = await fetch(`${SMPL_API_BASE}/digital_twin/${patientId}`);
+        if (twinResponse.ok) {
+          const twinData = await twinResponse.json();
+          if (twinData.biomarkers) {
+            await addBiomarkerOverlays(twinData.biomarkers);
+            setStatus(`Loaded ${Object.keys(twinData.biomarkers).length} biomarkers`);
+            return;
+          }
+        }
+        
+        // Fallback: try agent biomarkers endpoint
+        const bioResponse = await fetch(`${SMPL_API_BASE}/agent/patient/${patientId}/biomarkers`);
+        if (bioResponse.ok) {
+          const bioData = await bioResponse.json();
+          if (bioData.status === 'success' && bioData.biomarkers) {
+            await addBiomarkerOverlays(bioData.biomarkers);
+            setStatus(`Loaded ${Object.keys(bioData.biomarkers).length} biomarkers`);
+            return;
+          }
+        }
+        
+        // Use sample biomarkers for demo
+        const sampleBiomarkers = {
+          glucose: 95,
+          cholesterol: 180,
+          heart_rate: 72,
+          hemoglobin: 14.5,
+          blood_pressure_systolic: 120,
+          oxygen_saturation: 98
+        };
+        await addBiomarkerOverlays(sampleBiomarkers);
+        setStatus('Loaded sample biomarkers (demo)');
+        
+      } catch (error) {
+        console.error('Error loading biomarkers:', error);
+        setStatus('Error loading biomarkers');
+      }
+    }
+
+    async function addBiomarkerOverlays(biomarkers) {
+      if (!currentMesh || !biomarkers) return;
+      
+      // Clear existing overlays
+      biomarkerOverlays.forEach(overlay => scene.remove(overlay));
+      biomarkerOverlays.clear();
+      
+      // Create overlays for each biomarker
+      Object.entries(biomarkers).forEach(([name, value]) => {
+        const position = getBiomarkerPosition(name);
+        const status = calculateBiomarkerStatus(name, value);
+        const color = getBiomarkerColor(status);
+        
+        // Create pulsing sphere overlay
+        const geometry = new THREE.SphereGeometry(0.08, 16, 16);
+        const material = new THREE.MeshPhongMaterial({
+          color: color,
+          transparent: true,
+          opacity: 0.8,
+          emissive: color,
+          emissiveIntensity: 0.3
+        });
+        
+        const overlay = new THREE.Mesh(geometry, material);
+        overlay.position.copy(position);
+        overlay.userData = {
+          biomarker: name,
+          value: value,
+          status: status,
+          pulseSpeed: status === 'normal' ? 1 : 2
+        };
+        
+        scene.add(overlay);
+        biomarkerOverlays.set(name, overlay);
+        
+        // Create floating label
+        createBiomarkerLabel(name, value, status, position);
+      });
+      
+      console.log(`✅ Added ${Object.keys(biomarkers).length} biomarker overlays`);
+    }
+
+    function getBiomarkerPosition(biomarkerName) {
+      // Map biomarkers to body positions relative to SMPL model
+      const positions = {
+        'heart_rate': new THREE.Vector3(-0.3, 2.2, 0.4),
+        'blood_pressure_systolic': new THREE.Vector3(0.3, 2.2, 0.4),
+        'blood_pressure_diastolic': new THREE.Vector3(0.3, 2.0, 0.4),
+        'glucose': new THREE.Vector3(0.4, 1.8, 0.3),
+        'cholesterol': new THREE.Vector3(-0.4, 1.8, 0.3),
+        'hemoglobin': new THREE.Vector3(0, 2.4, 0.5),
+        'oxygen_saturation': new THREE.Vector3(0, 2.6, 0.4),
+        'temperature': new THREE.Vector3(0, 3.0, 0.2),
+        'bmi': new THREE.Vector3(0, 1.5, 0.6)
+      };
+      
+      return positions[biomarkerName] || new THREE.Vector3(0, 2, 0.5);
+    }
+
+    function calculateBiomarkerStatus(biomarkerName, value) {
+      const ranges = {
+        'glucose': [70, 100],
+        'cholesterol': [120, 200],
+        'hemoglobin': [12, 16],
+        'heart_rate': [60, 100],
+        'blood_pressure_systolic': [90, 140],
+        'blood_pressure_diastolic': [60, 90],
+        'oxygen_saturation': [95, 100]
+      };
+      
+      const range = ranges[biomarkerName];
+      if (!range) return 'normal';
+      
+      const [min, max] = range;
+      if (value < min) return 'low';
+      if (value > max) return 'high';
+      if (value > max * 0.9) return 'warning';
+      return 'normal';
+    }
+
+    function getBiomarkerColor(status) {
+      const colors = {
+        'normal': 0x00ff00,   // Green
+        'warning': 0xffaa00,  // Orange
+        'high': 0xff4400,     // Red-orange
+        'low': 0x0088ff,      // Blue
+        'critical': 0xff0000  // Red
+      };
+      return colors[status] || 0x00ff00;
+    }
+
+    function createBiomarkerLabel(name, value, status, position) {
+      // Create text sprite
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      canvas.width = 200;
+      canvas.height = 80;
+      
+      // Background
+      context.fillStyle = 'rgba(0, 0, 0, 0.8)';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Text
+      context.fillStyle = '#ffffff';
+      context.font = 'Bold 16px Arial';
+      context.textAlign = 'center';
+      
+      const displayName = name.replace(/_/g, ' ').toUpperCase();
+      context.fillText(displayName, canvas.width / 2, 25);
+      context.fillText(`${value}`, canvas.width / 2, 45);
+      
+      // Status indicator
+      const statusColor = status === 'normal' ? '#00ff00' : '#ff4400';
+      context.fillStyle = statusColor;
+      context.fillText(status.toUpperCase(), canvas.width / 2, 65);
+      
+      // Create sprite
+      const texture = new THREE.CanvasTexture(canvas);
+      const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true });
+      const sprite = new THREE.Sprite(spriteMaterial);
+      
+      sprite.position.copy(position);
+      sprite.position.y += 0.2;
+      sprite.scale.set(0.8, 0.4, 1);
+      sprite.userData = { type: 'biomarkerLabel', biomarker: name };
+      
+      scene.add(sprite);
+      biomarkerOverlays.set(`${name}_label`, sprite);
+    }
+
+    // Add mouse interaction for biomarker selection
+    function setupBiomarkerInteraction() {
+      renderer.domElement.addEventListener('click', onBiomarkerClick);
+      renderer.domElement.addEventListener('mousemove', onBiomarkerHover);
+    }
+
+    function onBiomarkerClick(event) {
+      updateMousePosition(event);
+      raycaster.setFromCamera(mouse, camera);
+      
+      const overlayObjects = Array.from(biomarkerOverlays.values());
+      const intersects = raycaster.intersectObjects(overlayObjects);
+      
+      if (intersects.length > 0) {
+        const clicked = intersects[0].object;
+        if (clicked.userData.biomarker) {
+          // Notify parent about biomarker selection
+          window.parent.postMessage({
+            type: 'biomarkerSelected',
+            biomarker: clicked.userData.biomarker,
+            value: clicked.userData.value,
+            status: clicked.userData.status
+          }, '*');
+          console.log(`🎯 Selected biomarker: ${clicked.userData.biomarker}`);
+        }
+      }
+    }
+
+    function onBiomarkerHover(event) {
+      updateMousePosition(event);
+      raycaster.setFromCamera(mouse, camera);
+      
+      const overlayObjects = Array.from(biomarkerOverlays.values());
+      const intersects = raycaster.intersectObjects(overlayObjects);
+      
+      // Reset cursor
+      renderer.domElement.style.cursor = 'default';
+      
+      if (intersects.length > 0) {
+        renderer.domElement.style.cursor = 'pointer';
+      }
+    }
+
+    function updateMousePosition(event) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    }
+
+    // Animate biomarker overlays
+    function animateBiomarkers() {
+      const time = Date.now() * 0.001;
+      
+      biomarkerOverlays.forEach((overlay, name) => {
+        if (overlay.userData.type === 'biomarkerLabel') return;
+        
+        // Pulsing animation
+        const pulseSpeed = overlay.userData.pulseSpeed || 1;
+        const pulse = Math.sin(time * pulseSpeed) * 0.2 + 1;
+        overlay.scale.setScalar(pulse);
+        
+        // Gentle floating
+        overlay.position.y += Math.sin(time * 0.5 + name.length) * 0.001;
+      });
+    }
+
     window.loadSMPLAvatar = async function(patientId, height, weight, gender, opts={}) {
+      currentPatientId = patientId;
       if (gender) modelSel.value = gender;
       if (height) heightR.value = heightN.value = height;
       if (weight) weightR.value = weightN.value = weight;
       if (opts.beta1 !== undefined) beta1R.value = beta1N.value = opts.beta1;
       await fetchAndLoad();
+      if (patientId) await loadPatientBiomarkers(patientId);
     }
+    
     window.updateSMPLParameters = async function(height, weight, gender, opts={}) {
       if (gender) modelSel.value = gender;
       if (height) heightR.value = heightN.value = height;
       if (weight) weightR.value = weightN.value = weight;
       if (opts.beta1 !== undefined) beta1R.value = beta1N.value = opts.beta1;
       await fetchAndLoad();
+      if (currentPatientId) await loadPatientBiomarkers(currentPatientId);
     }
+    
     window.getSMPLHealth = async function() {
       // Check if GCS assets are accessible
       try {

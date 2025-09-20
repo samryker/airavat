@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Airavat - Live Biomarker Digital Twin</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+      color: white;
+      overflow: hidden;
+    }
+    
+    #container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+    }
+    
+    #biomarker-panel {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      width: 300px;
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(10px);
+      border-radius: 12px;
+      padding: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      z-index: 100;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+    
+    .biomarker-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 15px;
+      color: #4a90e2;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .biomarker-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+    
+    .biomarker-item:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 6px;
+      padding-left: 10px;
+      padding-right: 10px;
+    }
+    
+    .biomarker-name {
+      font-weight: 500;
+      text-transform: capitalize;
+    }
+    
+    .biomarker-value {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 2px;
+    }
+    
+    .biomarker-number {
+      font-weight: 600;
+      font-size: 16px;
+    }
+    
+    .biomarker-unit {
+      font-size: 12px;
+      opacity: 0.7;
+    }
+    
+    .biomarker-status {
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    
+    .status-normal { background: #00ff00; color: #000; }
+    .status-warning { background: #ffaa00; color: #000; }
+    .status-critical { background: #ff0000; color: #fff; }
+    .status-low { background: #0088ff; color: #fff; }
+    .status-high { background: #ff4400; color: #fff; }
+    
+    #controls {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(10px);
+      border-radius: 12px;
+      padding: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      z-index: 100;
+    }
+    
+    .control-group {
+      margin-bottom: 15px;
+    }
+    
+    .control-label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 500;
+      color: #4a90e2;
+    }
+    
+    .control-input {
+      width: 100%;
+      padding: 8px 12px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 6px;
+      color: white;
+      font-size: 14px;
+    }
+    
+    .control-button {
+      background: linear-gradient(135deg, #4a90e2, #357abd);
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+    
+    .control-button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(74, 144, 226, 0.3);
+    }
+    
+    #status {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      background: rgba(0, 0, 0, 0.8);
+      padding: 10px 15px;
+      border-radius: 8px;
+      font-size: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    .pulse {
+      animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.5; }
+      100% { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div id="status">Initializing Live Digital Twin...</div>
+    
+    <div id="biomarker-panel">
+      <div class="biomarker-title">
+        <span>🔬</span>
+        Live Biomarkers
+      </div>
+      <div id="biomarker-list">
+        <!-- Biomarkers will be populated here -->
+      </div>
+    </div>
+    
+    <div id="controls">
+      <div class="control-group">
+        <label class="control-label">Patient ID</label>
+        <input type="text" id="patientId" class="control-input" value="test_patient" placeholder="Enter patient ID">
+      </div>
+      
+      <div class="control-group">
+        <label class="control-label">Height (cm)</label>
+        <input type="number" id="height" class="control-input" value="170" min="100" max="250">
+      </div>
+      
+      <div class="control-group">
+        <label class="control-label">Weight (kg)</label>
+        <input type="number" id="weight" class="control-input" value="70" min="30" max="200">
+      </div>
+      
+      <div class="control-group">
+        <label class="control-label">Gender</label>
+        <select id="gender" class="control-input">
+          <option value="neutral">Neutral</option>
+          <option value="male">Male</option>
+          <option value="female">Female</option>
+        </select>
+      </div>
+      
+      <button class="control-button" onclick="loadPatient()">Load Patient Twin</button>
+      <button class="control-button" onclick="refreshBiomarkers()">Refresh Biomarkers</button>
+    </div>
+  </div>
+
+  <script type="module">
+    import BiomarkerDigitalTwin from './src/biomarker-twin.js';
+    
+    let digitalTwin = null;
+    
+    // Initialize the digital twin
+    function initDigitalTwin() {
+      const container = document.getElementById('container');
+      digitalTwin = new BiomarkerDigitalTwin(container, {
+        backendUrl: 'https://airavat-backend-10892877764.us-central1.run.app',
+        updateInterval: 30000,
+        enableRealTimeUpdates: true
+      });
+      
+      document.getElementById('status').textContent = 'Live Digital Twin Ready';
+      console.log('✅ Biomarker Digital Twin initialized');
+    }
+    
+    // Load patient function
+    window.loadPatient = async function() {
+      const patientId = document.getElementById('patientId').value;
+      const height = parseFloat(document.getElementById('height').value);
+      const weight = parseFloat(document.getElementById('weight').value);
+      const gender = document.getElementById('gender').value;
+      
+      if (!patientId) {
+        alert('Please enter a patient ID');
+        return;
+      }
+      
+      document.getElementById('status').textContent = `Loading patient ${patientId}...`;
+      
+      try {
+        await digitalTwin.loadPatient(patientId, { height, weight, gender });
+        document.getElementById('status').textContent = `Patient ${patientId} loaded`;
+        updateBiomarkerPanel();
+      } catch (error) {
+        console.error('Error loading patient:', error);
+        document.getElementById('status').textContent = `Error: ${error.message}`;
+      }
+    };
+    
+    // Refresh biomarkers function
+    window.refreshBiomarkers = async function() {
+      const patientId = document.getElementById('patientId').value;
+      if (!patientId || !digitalTwin) return;
+      
+      document.getElementById('status').textContent = 'Refreshing biomarkers...';
+      
+      try {
+        await digitalTwin.loadBiomarkerData(patientId);
+        updateBiomarkerPanel();
+        document.getElementById('status').textContent = 'Biomarkers updated';
+      } catch (error) {
+        console.error('Error refreshing biomarkers:', error);
+        document.getElementById('status').textContent = `Error: ${error.message}`;
+      }
+    };
+    
+    // Update biomarker panel UI
+    function updateBiomarkerPanel() {
+      if (!digitalTwin || !digitalTwin.biomarkerData) return;
+      
+      const biomarkerList = document.getElementById('biomarker-list');
+      biomarkerList.innerHTML = '';
+      
+      Object.entries(digitalTwin.biomarkerData).forEach(([name, data]) => {
+        const item = document.createElement('div');
+        item.className = 'biomarker-item';
+        item.onclick = () => digitalTwin.selectBiomarker(name);
+        
+        const displayName = name.replace(/_/g, ' ');
+        const statusClass = `status-${data.status || 'normal'}`;
+        
+        item.innerHTML = `
+          <div class="biomarker-name">${displayName}</div>
+          <div class="biomarker-value">
+            <div class="biomarker-number">${data.value}</div>
+            <div class="biomarker-unit">${data.unit || ''}</div>
+            <div class="biomarker-status ${statusClass}">${data.status || 'normal'}</div>
+          </div>
+        `;
+        
+        biomarkerList.appendChild(item);
+      });
+    }
+    
+    // Listen for messages from Flutter
+    window.addEventListener('message', (event) => {
+      const data = event.data;
+      
+      if (data.type === 'loadPatient') {
+        document.getElementById('patientId').value = data.patientId;
+        if (data.profile) {
+          if (data.profile.height) document.getElementById('height').value = data.profile.height;
+          if (data.profile.weight) document.getElementById('weight').value = data.profile.weight;
+          if (data.profile.gender) document.getElementById('gender').value = data.profile.gender;
+        }
+        loadPatient();
+      } else if (data.type === 'updateBiomarkers') {
+        if (digitalTwin) {
+          digitalTwin.biomarkerData = data.biomarkers;
+          digitalTwin.updateBiomarkerVisualizations();
+          updateBiomarkerPanel();
+        }
+      }
+    });
+    
+    // Initialize when DOM is ready
+    document.addEventListener('DOMContentLoaded', initDigitalTwin);
+    
+    // Auto-load test patient on startup
+    setTimeout(() => {
+      if (digitalTwin) {
+        loadPatient();
+      }
+    }, 1000);
+  </script>
+</body>
+</html>

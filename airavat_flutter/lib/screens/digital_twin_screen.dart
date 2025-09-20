@@ -85,6 +85,13 @@ class _DigitalTwinScreenState extends State<DigitalTwinScreen> {
       _status = 'Processing treatment...';
     });
     try {
+      // First update biomarkers in the live twin system
+      if (_biomarkers.isNotEmpty) {
+        await DigitalTwinService.updateBiomarkers(_biomarkers);
+        print('✅ Biomarkers updated in live twin system');
+      }
+
+      // Then process treatment with updated data
       final payload = TreatmentUpdatePayload(
         report: _reportCtrl.text.trim().isEmpty
             ? 'General checkup report'
@@ -94,16 +101,66 @@ class _DigitalTwinScreenState extends State<DigitalTwinScreen> {
         biomarkers: _biomarkers,
       );
       final resp = await DigitalTwinService.processTreatment(payload);
+
+      // Get updated live twin data
+      final liveTwinData = await DigitalTwinService.getLiveTwinData();
+      print('📊 Live twin data: $liveTwinData');
+
       setState(() {
         _currentTwin = resp.twin;
         _inference = resp.inference;
-        _status = 'Treatment processed';
+        _status = 'Treatment processed with live biomarkers';
       });
+
+      // Show enhanced result dialog with live data
+      _showLiveResultDialog(resp, liveTwinData);
     } catch (e) {
       setState(() => _status = 'Process failed: $e');
     } finally {
       setState(() => _loading = false);
     }
+  }
+
+  void _showLiveResultDialog(
+      TreatmentUpdateResponse result, Map<String, dynamic> liveTwinData) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('🧬 Live Digital Twin Update'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('✅ Treatment: ${result.inference}'),
+              const SizedBox(height: 16),
+              const Text('📊 Live Biomarkers:',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              ...((liveTwinData['biomarkers'] as Map<String, dynamic>? ?? {})
+                  .entries
+                  .map((e) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Text('• ${e.key}: ${e.value}'),
+                      ))),
+              const SizedBox(height: 16),
+              if (liveTwinData['ai_insights'] != null) ...[
+                const Text('🤖 AI Insights:',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                Text(liveTwinData['ai_insights'].toString()),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _importBiomarkersFromFile() async {

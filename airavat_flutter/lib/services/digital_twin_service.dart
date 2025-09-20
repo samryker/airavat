@@ -138,4 +138,92 @@ class DigitalTwinService {
     throw Exception(
         'Process treatment failed: ${res.statusCode} - ${res.body}');
   }
+
+  /// Get live twin data combining SMPL + biomarkers using existing Cloud Run endpoints
+  static Future<Map<String, dynamic>> getLiveTwinData(
+      {String? patientId}) async {
+    final id = patientId ?? _userId;
+    if (id == null) throw Exception('User not authenticated');
+
+    try {
+      // Get SMPL twin data from existing endpoint
+      Map<String, dynamic> smplData = {};
+      try {
+        final twinRes = await http.get(Uri.parse('$_base/digital_twin/$id'));
+        if (twinRes.statusCode == 200) {
+          smplData = jsonDecode(twinRes.body) as Map<String, dynamic>;
+        }
+      } catch (e) {
+        print('SMPL data not available: $e');
+      }
+
+      // Get biomarkers from agent endpoint
+      Map<String, dynamic> biomarkers = {};
+      try {
+        final bioRes = await http.get(
+            Uri.parse('${BackendConfig.baseUrl}/agent/patient/$id/biomarkers'));
+        if (bioRes.statusCode == 200) {
+          final bioData = jsonDecode(bioRes.body);
+          if (bioData['status'] == 'success') {
+            biomarkers = bioData['biomarkers'] ?? {};
+          }
+        }
+      } catch (e) {
+        print('Biomarker data not available: $e');
+      }
+
+      // Combine data
+      return {
+        'patient_id': id,
+        'smpl_data': smplData,
+        'biomarkers': biomarkers,
+        'last_updated': DateTime.now().toIso8601String(),
+        'data_sources': {
+          'smpl': smplData.isNotEmpty,
+          'biomarkers': biomarkers.isNotEmpty,
+        }
+      };
+    } catch (e) {
+      throw Exception('Get live twin data failed: $e');
+    }
+  }
+
+  /// Update biomarkers using existing twin upsert endpoint
+  static Future<Map<String, dynamic>> updateBiomarkers(
+    Map<String, dynamic> biomarkers, {
+    String? patientId,
+  }) async {
+    final id = patientId ?? _userId;
+    if (id == null) throw Exception('User not authenticated');
+
+    try {
+      // Get current twin data
+      DigitalTwinRecord? currentTwin;
+      try {
+        currentTwin = await getTwin(patientId: id);
+      } catch (e) {
+        print('No existing twin found, creating new one');
+      }
+
+      // Create/update twin with biomarkers
+      final payload = DigitalTwinPayload(
+        heightCm: currentTwin?.heightCm ?? 170.0,
+        weightKg: currentTwin?.weightKg ?? 70.0,
+        biomarkers: biomarkers
+            .map((k, v) => MapEntry(k, (v is num) ? v.toDouble() : 0.0)),
+      );
+
+      await upsertTwin(payload, patientId: id);
+
+      return {
+        'status': 'success',
+        'message': 'Biomarkers updated successfully',
+        'patient_id': id,
+        'biomarker_count': biomarkers.length,
+        'twin_updated': true
+      };
+    } catch (e) {
+      throw Exception('Update biomarkers failed: $e');
+    }
+  }
 }

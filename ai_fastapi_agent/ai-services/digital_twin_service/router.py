@@ -122,3 +122,107 @@ async def process_treatment(patient_id: str, payload: TreatmentUpdatePayload) ->
             stored = False
 
     return TreatmentUpdateResponse(twin=record, inference=inference, stored=stored)
+
+
+@router.get("/{patient_id}/live", response_model=Dict[str, Any])
+async def get_live_twin_data(patient_id: str) -> Dict[str, Any]:
+    """Get complete live twin data combining SMPL model + biomarkers + AI insights."""
+    try:
+        # Get SMPL model data
+        smpl_data = {}
+        twin_record = _twin_store.get(patient_id)
+        if twin_record:
+            smpl_data = {
+                "height_cm": twin_record.height_cm,
+                "weight_kg": twin_record.weight_kg,
+                "bmi": round(twin_record.weight_kg / ((twin_record.height_cm / 100) ** 2), 1),
+                "biomarkers": twin_record.biomarkers or {}
+            }
+        
+        # Get biomarkers from Firestore
+        biomarkers = {}
+        db = _get_db()
+        if db:
+            try:
+                # Get from twin_customizations collection
+                twin_doc = db.collection("twin_customizations").document(patient_id).get()
+                if twin_doc.exists:
+                    twin_data = twin_doc.to_dict()
+                    biomarkers = twin_data.get("biomarkers", {})
+                
+                # Also check biomarkers collection
+                biomarker_docs = db.collection("biomarkers").document(patient_id).collection("reports").order_by("timestamp", direction="desc").limit(1).get()
+                for doc in biomarker_docs:
+                    latest_biomarkers = doc.to_dict().get("biomarkers", {})
+                    biomarkers.update(latest_biomarkers)
+                    
+            except Exception as e:
+                print(f"Error fetching biomarkers: {e}")
+        
+        # Generate AI insights
+        ai_insights = ""
+        if biomarkers and smpl_data:
+            prompt = f"""
+            Analyze this patient's live data and provide 3-4 key health insights:
+            
+            Physical: Height {smpl_data.get('height_cm', 'unknown')}cm, Weight {smpl_data.get('weight_kg', 'unknown')}kg, BMI {smpl_data.get('bmi', 'unknown')}
+            Biomarkers: {biomarkers}
+            
+            Provide brief, actionable insights about their health status.
+            """
+            try:
+                result = await _llm.ainvoke(prompt)
+                ai_insights = getattr(result, "content", "AI insights temporarily unavailable")
+            except Exception:
+                ai_insights = "AI insights temporarily unavailable"
+        
+        return {
+            "patient_id": patient_id,
+            "smpl_data": smpl_data,
+            "biomarkers": biomarkers,
+            "ai_insights": ai_insights,
+            "last_updated": datetime.utcnow().isoformat() + "Z",
+            "data_sources": {
+                "smpl": bool(twin_record),
+                "biomarkers": bool(biomarkers),
+                "ai_insights": bool(ai_insights)
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting live twin data: {str(e)}")
+
+
+@router.post("/{patient_id}/biomarkers")
+async def update_biomarkers(patient_id: str, biomarkers: Dict[str, Any]) -> Dict[str, Any]:
+    """Update patient biomarkers for live twin visualization."""
+    try:
+        db = _get_db()
+        if not db:
+            raise HTTPException(status_code=503, detail="Database not available")
+        
+        # Store in biomarkers collection
+        biomarker_data = {
+            "biomarkers": biomarkers,
+            "timestamp": datetime.utcnow(),
+            "reportType": "live_update"
+        }
+        
+        db.collection("biomarkers").document(patient_id).collection("reports").add(biomarker_data)
+        
+        # Also update twin_customizations for quick access
+        db.collection("twin_customizations").document(patient_id).set({
+            "userId": patient_id,
+            "biomarkers": biomarkers,
+            "lastUpdated": datetime.utcnow()
+        }, merge=True)
+        
+        return {
+            "status": "success",
+            "message": "Biomarkers updated successfully",
+            "patient_id": patient_id,
+            "biomarker_count": len(biomarkers)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating biomarkers: {str(e)}")
