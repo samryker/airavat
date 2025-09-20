@@ -332,6 +332,47 @@
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
+      
+      // Reposition biomarkers on resize
+      repositionBiomarkers();
+    }
+
+    function repositionBiomarkers() {
+      const container = document.getElementById('biomarker-container');
+      if (!container) return;
+      
+      const widgets = Array.from(container.children);
+      widgets.forEach((widget, index) => {
+        const isMobile = window.innerWidth < 768;
+        const isTablet = window.innerWidth >= 768 && window.innerWidth < 1024;
+        const isLeft = index % 2 === 0;
+        
+        if (isMobile) {
+          // Mobile: stack at bottom in horizontal scroll if needed
+          const bottomOffset = 200 - (Math.floor(index / 2) * 50);
+          widget.style.bottom = `${bottomOffset}px`;
+          widget.style.top = 'auto';
+          widget.style.left = isLeft ? '10px' : 'auto';
+          widget.style.right = isLeft ? 'auto' : '10px';
+          widget.style.width = '140px';
+        } else if (isTablet) {
+          // Tablet: side positioning with more spacing
+          const topOffset = 60 + (Math.floor(index / 2) * 60);
+          widget.style.top = `${topOffset}px`;
+          widget.style.bottom = 'auto';
+          widget.style.left = isLeft ? '15px' : 'auto';
+          widget.style.right = isLeft ? 'auto' : '15px';
+          widget.style.width = '160px';
+        } else {
+          // Desktop: full side panels
+          const topOffset = 20 + (Math.floor(index / 2) * 80);
+          widget.style.top = `${topOffset}px`;
+          widget.style.bottom = 'auto';
+          widget.style.left = isLeft ? '20px' : 'auto';
+          widget.style.right = isLeft ? 'auto' : '20px';
+          widget.style.width = '200px';
+        }
+      });
     }
 
     function setStatus(text) {
@@ -432,43 +473,119 @@
       };
       const statusColor = statusColors[status] || '#00ff88';
       
-      widget.style.cssText = `
-        position: absolute;
-        top: ${verticalPosition}px;
-        left: ${horizontalPosition};
-        right: ${horizontalPositionRight};
-        width: 200px;
-        background: linear-gradient(135deg, rgba(0,0,0,0.9), rgba(20,20,20,0.9));
-        border: 2px solid ${statusColor};
-        border-radius: 12px;
-        padding: 12px;
-        color: white;
-        font-family: -apple-system, BlinkMacSystemFont, Arial;
-        pointer-events: auto;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        backdrop-filter: blur(10px);
-        box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-      `;
+      // Responsive positioning based on screen size
+      const isMobile = window.innerWidth < 768;
+      const isTablet = window.innerWidth >= 768 && window.innerWidth < 1024;
+      
+      let widgetWidth, horizontalPos, verticalPos, fontSize;
+      
+      if (isMobile) {
+        // Mobile: stack at bottom, smaller widgets
+        widgetWidth = '160px';
+        horizontalPos = isLeft ? '10px' : 'auto';
+        const horizontalPosRight = isLeft ? 'auto' : '10px';
+        verticalPos = window.innerHeight - 200 + (Math.floor(index / 2) * 60);
+        fontSize = '12px';
+        
+        widget.style.cssText = `
+          position: absolute;
+          bottom: ${200 - (Math.floor(index / 2) * 60)}px;
+          left: ${horizontalPos};
+          right: ${horizontalPosRight};
+          width: ${widgetWidth};
+          background: linear-gradient(135deg, rgba(0,0,0,0.95), rgba(20,20,20,0.95));
+          border: 2px solid ${statusColor};
+          border-radius: 8px;
+          padding: 8px;
+          color: white;
+          font-family: -apple-system, BlinkMacSystemFont, Arial;
+          pointer-events: auto;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          backdrop-filter: blur(10px);
+          box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+          z-index: 100;
+        `;
+      } else if (isTablet) {
+        // Tablet: smaller side panels
+        widgetWidth = '180px';
+        horizontalPos = isLeft ? '15px' : 'auto';
+        const horizontalPosRight = isLeft ? 'auto' : '15px';
+        verticalPos = 60 + (Math.floor(index / 2) * 70);
+        
+        widget.style.cssText = `
+          position: absolute;
+          top: ${verticalPos}px;
+          left: ${horizontalPos};
+          right: ${horizontalPosRight};
+          width: ${widgetWidth};
+          background: linear-gradient(135deg, rgba(0,0,0,0.9), rgba(20,20,20,0.9));
+          border: 2px solid ${statusColor};
+          border-radius: 10px;
+          padding: 10px;
+          color: white;
+          font-family: -apple-system, BlinkMacSystemFont, Arial;
+          pointer-events: auto;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          backdrop-filter: blur(10px);
+          box-shadow: 0 6px 24px rgba(0,0,0,0.3);
+          z-index: 100;
+        `;
+      } else {
+        // Desktop: full side panels
+        widgetWidth = '220px';
+        horizontalPos = isLeft ? '20px' : 'auto';
+        const horizontalPosRight = isLeft ? 'auto' : '20px';
+        verticalPos = 20 + (Math.floor(index / 2) * 80);
+        
+        widget.style.cssText = `
+          position: absolute;
+          top: ${verticalPos}px;
+          left: ${horizontalPos};
+          right: ${horizontalPosRight};
+          width: ${widgetWidth};
+          background: linear-gradient(135deg, rgba(0,0,0,0.9), rgba(20,20,20,0.9));
+          border: 2px solid ${statusColor};
+          border-radius: 12px;
+          padding: 12px;
+          color: white;
+          font-family: -apple-system, BlinkMacSystemFont, Arial;
+          pointer-events: auto;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          backdrop-filter: blur(10px);
+          box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+          z-index: 100;
+        `;
+      }
+      
+      // Responsive content sizing
+      const dotSize = isMobile ? '10px' : '12px';
+      const titleSize = isMobile ? '12px' : '14px';
+      const valueSize = isMobile ? '14px' : '18px';
+      const statusSize = isMobile ? '9px' : '11px';
+      const gap = isMobile ? '8px' : '12px';
       
       widget.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 12px;">
+        <div style="display: flex; align-items: center; gap: ${gap};">
           <div style="
-            width: 12px; 
-            height: 12px; 
+            width: ${dotSize}; 
+            height: ${dotSize}; 
             background: ${statusColor}; 
             border-radius: 50%; 
             box-shadow: 0 0 10px ${statusColor};
             animation: pulse 2s infinite;
+            flex-shrink: 0;
           "></div>
-          <div style="flex: 1;">
-            <div style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">
+          <div style="flex: 1; min-width: 0;">
+            <div style="font-size: ${titleSize}; font-weight: 600; margin-bottom: 2px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
               ${displayName}
             </div>
-            <div style="font-size: 18px; font-weight: bold; color: ${statusColor};">
+            <div style="font-size: ${valueSize}; font-weight: bold; color: ${statusColor}; line-height: 1.2;">
               ${value} ${unit}
             </div>
-            <div style="font-size: 11px; opacity: 0.8; text-transform: uppercase; font-weight: 600;">
+            <div style="font-size: ${statusSize}; opacity: 0.8; text-transform: uppercase; font-weight: 600; line-height: 1;">
               ${status}
             </div>
           </div>

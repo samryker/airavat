@@ -98,7 +98,7 @@ async def process_treatment(patient_id: str, payload: TreatmentUpdatePayload) ->
     _twin_store[patient_id] = record
 
     prompt = (
-        "Given the following patient data and report, provide a concise treatment update:\n"
+        "Given the following patient data and report, provide a concise treatment update. Always proacively provie the patient with tests if needed and suggestive lifestyle changes :\n"
         f"Data: {payload.model_dump(exclude={'report'})}\nReport: {payload.report}"
     )
     result = await _llm.ainvoke(prompt)
@@ -168,7 +168,7 @@ async def get_live_twin_data(patient_id: str) -> Dict[str, Any]:
             Physical: Height {smpl_data.get('height_cm', 'unknown')}cm, Weight {smpl_data.get('weight_kg', 'unknown')}kg, BMI {smpl_data.get('bmi', 'unknown')}
             Biomarkers: {biomarkers}
             
-            Provide brief, actionable insights about their health status.
+            Provide brief, actionable insights about their health status.Be suugestive and proactive about the patient's health.
             """
             try:
                 result = await _llm.ainvoke(prompt)
