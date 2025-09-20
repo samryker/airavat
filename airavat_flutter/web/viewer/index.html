@@ -20,6 +20,12 @@
       #status { position: absolute; top: 10px; right: 10px; z-index: 10; padding: 10px; background: rgba(0,0,0,0.75); color: #fff; border-radius: 8px; font-size: 12px; min-width: 200px; }
       .btn { background: #0ea5e9; border: none; color: #fff; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
       .btn:disabled { background: #9ca3af; cursor: default; }
+      
+      @keyframes pulse {
+        0% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.7; transform: scale(1.1); }
+        100% { opacity: 1; transform: scale(1); }
+      }
     </style>
     <script type="importmap">
       {
@@ -63,6 +69,11 @@
     </div>
   </div>
   <div id="status">Initializing...</div>
+  
+  <!-- Biomarker overlay container -->
+  <div id="biomarker-container" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10;">
+    <!-- Biomarker widgets will be added here -->
+  </div>
 
   <script type="module">
     import * as THREE from 'three';
@@ -313,7 +324,6 @@
       (function animate(){ 
         requestAnimationFrame(animate); 
         controls.update(); 
-        animateBiomarkers(); // Add biomarker animations
         renderer.render(scene, camera); 
       })();
     }
@@ -381,130 +391,118 @@
     async function addBiomarkerOverlays(biomarkers) {
       if (!currentMesh || !biomarkers) return;
       
-      // Clear existing overlays
-      biomarkerOverlays.forEach(overlay => scene.remove(overlay));
+      // Clear existing HTML overlays
+      const container = document.getElementById('biomarker-container');
+      if (container) {
+        container.innerHTML = '';
+      }
       biomarkerOverlays.clear();
       
-      // Create overlays for each biomarker
-      Object.entries(biomarkers).forEach(([name, value]) => {
-        const position = getBiomarkerPosition(name);
+      // Create HTML biomarker widgets positioned over the 3D canvas
+      Object.entries(biomarkers).forEach(([name, value], index) => {
         const status = calculateBiomarkerStatus(name, value);
-        const color = getBiomarkerColor(status);
+        const isLeft = index % 2 === 0;
         
-        // Create attractive biomarker indicator
-        const group = new THREE.Group();
-        
-        // Main sphere with glow effect
-        const sphereGeometry = new THREE.SphereGeometry(0.06, 32, 32);
-        const sphereMaterial = new THREE.MeshPhongMaterial({
-          color: color,
-          transparent: true,
-          opacity: 0.9,
-          emissive: color,
-          emissiveIntensity: 0.4,
-          shininess: 100
-        });
-        
-        const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
-        group.add(sphere);
-        
-        // Outer glow ring
-        const ringGeometry = new THREE.RingGeometry(0.08, 0.12, 16);
-        const ringMaterial = new THREE.MeshBasicMaterial({
-          color: color,
-          transparent: true,
-          opacity: 0.3,
-          side: THREE.DoubleSide
-        });
-        
-        const ring = new THREE.Mesh(ringGeometry, ringMaterial);
-        ring.lookAt(camera.position); // Face camera
-        group.add(ring);
-        
-        // Connection line to body
-        const lineGeometry = new THREE.BufferGeometry().setFromPoints([
-          new THREE.Vector3(0, 0, 0),
-          position.clone().sub(position).normalize().multiplyScalar(-0.15)
-        ]);
-        const lineMaterial = new THREE.LineBasicMaterial({
-          color: color,
-          transparent: true,
-          opacity: 0.5
-        });
-        const line = new THREE.Line(lineGeometry, lineMaterial);
-        group.add(line);
-        
-        group.position.copy(position);
-        group.userData = {
-          biomarker: name,
-          value: value,
-          status: status,
-          pulseSpeed: status === 'normal' ? 1 : 2,
-          originalPosition: position.clone()
-        };
-        
-        scene.add(group);
-        biomarkerOverlays.set(name, group);
-        
-        // Create improved floating label
-        createBiomarkerLabel(name, value, status, position);
+        // Create HTML biomarker widget
+        const biomarkerWidget = createBiomarkerHTMLWidget(name, value, status, isLeft, index);
+        container.appendChild(biomarkerWidget);
+        biomarkerOverlays.set(name, biomarkerWidget);
       });
       
-      console.log(`✅ Added ${Object.keys(biomarkers).length} biomarker overlays`);
+      console.log(`✅ Added ${Object.keys(biomarkers).length} HTML biomarker overlays`);
     }
 
-    function getBiomarkerPosition(biomarkerName) {
-      if (!currentMesh) return new THREE.Vector3(0, 1, 0.5);
+    function createBiomarkerHTMLWidget(name, value, status, isLeft, index) {
+      const widget = document.createElement('div');
+      const displayName = name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      const unit = getBiomarkerUnit(name);
       
-      // Get SMPL body bounds and update them
-      currentMesh.updateMatrixWorld(true);
-      const bbox = new THREE.Box3().setFromObject(currentMesh);
-      const center = bbox.getCenter(new THREE.Vector3());
-      const size = bbox.getSize(new THREE.Vector3());
+      // Position widget on left or right side of screen
+      const verticalPosition = 20 + (index * 80); // Stack vertically
+      const horizontalPosition = isLeft ? '20px' : 'auto';
+      const horizontalPositionRight = isLeft ? 'auto' : '20px';
       
-      console.log(`📐 Body bounds: center=${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)}, size=${size.x.toFixed(2)}, ${size.y.toFixed(2)}, ${size.z.toFixed(2)}`);
-      
-      // Use smaller, more realistic positioning relative to actual body
-      const radius = Math.max(size.x, size.z) * 1.2; // Closer to body
-      const bodyHeight = size.y;
-      const bodyBottom = center.y - bodyHeight / 2;
-      const bodyTop = center.y + bodyHeight / 2;
-      
-      // Define biomarker positions as simple left/right alternating pattern
-      const biomarkerNames = Object.keys(biomarkers || {});
-      const biomarkerIndex = biomarkerNames.indexOf(biomarkerName);
-      
-      // Simple left/right alternating positions around body
-      const isLeft = biomarkerIndex % 2 === 0;
-      const verticalIndex = Math.floor(biomarkerIndex / 2);
-      
-      // Position biomarkers in vertical stack on left and right sides
-      const anatomicalPositions = {
-        'temperature': { heightOffset: 0.4, side: isLeft ? -1 : 1 },
-        'oxygen_saturation': { heightOffset: 0.3, side: isLeft ? -1 : 1 },
-        'heart_rate': { heightOffset: 0.2, side: isLeft ? -1 : 1 },
-        'hemoglobin': { heightOffset: 0.1, side: isLeft ? -1 : 1 },
-        'blood_pressure_systolic': { heightOffset: 0.0, side: isLeft ? -1 : 1 },
-        'blood_pressure_diastolic': { heightOffset: -0.1, side: isLeft ? -1 : 1 },
-        'glucose': { heightOffset: -0.2, side: isLeft ? -1 : 1 },
-        'cholesterol': { heightOffset: -0.3, side: isLeft ? -1 : 1 },
-        'bmi': { heightOffset: -0.4, side: isLeft ? -1 : 1 }
+      // Status colors
+      const statusColors = {
+        'normal': '#00ff88',
+        'warning': '#ffaa00', 
+        'high': '#ff4444',
+        'low': '#0088ff',
+        'critical': '#ff0000'
       };
+      const statusColor = statusColors[status] || '#00ff88';
       
-      const config = anatomicalPositions[biomarkerName] || { 
-        heightOffset: (verticalIndex * 0.2) - 0.4, 
-        side: isLeft ? -1 : 1 
-      };
+      widget.style.cssText = `
+        position: absolute;
+        top: ${verticalPosition}px;
+        left: ${horizontalPosition};
+        right: ${horizontalPositionRight};
+        width: 200px;
+        background: linear-gradient(135deg, rgba(0,0,0,0.9), rgba(20,20,20,0.9));
+        border: 2px solid ${statusColor};
+        border-radius: 12px;
+        padding: 12px;
+        color: white;
+        font-family: -apple-system, BlinkMacSystemFont, Arial;
+        pointer-events: auto;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+      `;
       
-      // Calculate simple left/right positioning
-      const y = center.y + config.heightOffset;
-      const x = center.x + (config.side * radius * 0.5); // Closer to body
-      const z = center.z + (radius * 0.3); // Slightly forward for visibility
+      widget.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="
+            width: 12px; 
+            height: 12px; 
+            background: ${statusColor}; 
+            border-radius: 50%; 
+            box-shadow: 0 0 10px ${statusColor};
+            animation: pulse 2s infinite;
+          "></div>
+          <div style="flex: 1;">
+            <div style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">
+              ${displayName}
+            </div>
+            <div style="font-size: 18px; font-weight: bold; color: ${statusColor};">
+              ${value} ${unit}
+            </div>
+            <div style="font-size: 11px; opacity: 0.8; text-transform: uppercase; font-weight: 600;">
+              ${status}
+            </div>
+          </div>
+        </div>
+      `;
       
-      console.log(`📍 ${biomarkerName}: x=${x.toFixed(2)}, y=${y.toFixed(2)}, z=${z.toFixed(2)} (${isLeft ? 'LEFT' : 'RIGHT'})`);
+      // Add hover effects
+      widget.addEventListener('mouseenter', () => {
+        widget.style.transform = 'scale(1.05)';
+        widget.style.boxShadow = `0 12px 40px rgba(0,0,0,0.4), 0 0 20px ${statusColor}40`;
+      });
       
-      return new THREE.Vector3(x, y, z);
+      widget.addEventListener('mouseleave', () => {
+        widget.style.transform = 'scale(1)';
+        widget.style.boxShadow = '0 8px 32px rgba(0,0,0,0.3)';
+      });
+      
+      // Add click handler
+      widget.addEventListener('click', () => {
+        window.parent.postMessage({
+          type: 'biomarkerSelected',
+          biomarker: name,
+          value: value,
+          status: status
+        }, '*');
+        console.log(`🎯 Selected biomarker: ${name}`);
+      });
+      
+      widget.userData = { biomarker: name, value: value, status: status };
+      
+      return widget;
     }
+
+    // Remove old 3D positioning - now using HTML overlays
 
     function calculateBiomarkerStatus(biomarkerName, value) {
       const ranges = {
@@ -538,74 +536,7 @@
       return colors[status] || 0x00ff00;
     }
 
-    function createBiomarkerLabel(name, value, status, position) {
-      // Create modern, clean biomarker label
-      const canvas = document.createElement('canvas');
-      const context = canvas.getContext('2d');
-      canvas.width = 280;
-      canvas.height = 100;
-      
-      // Modern rounded background with gradient
-      const gradient = context.createLinearGradient(0, 0, 0, canvas.height);
-      gradient.addColorStop(0, 'rgba(0, 0, 0, 0.9)');
-      gradient.addColorStop(1, 'rgba(20, 20, 20, 0.9)');
-      
-      context.fillStyle = gradient;
-      context.roundRect(0, 0, canvas.width, canvas.height, 12);
-      context.fill();
-      
-      // Border with status color
-      const statusColor = status === 'normal' ? '#00ff88' : 
-                         status === 'warning' ? '#ffaa00' : '#ff4444';
-      context.strokeStyle = statusColor;
-      context.lineWidth = 2;
-      context.roundRect(2, 2, canvas.width - 4, canvas.height - 4, 10);
-      context.stroke();
-      
-      // Title text
-      context.fillStyle = '#ffffff';
-      context.font = 'Bold 18px -apple-system, BlinkMacSystemFont, Arial';
-      context.textAlign = 'center';
-      
-      const displayName = name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-      context.fillText(displayName, canvas.width / 2, 30);
-      
-      // Value text
-      context.fillStyle = statusColor;
-      context.font = 'Bold 24px -apple-system, BlinkMacSystemFont, Arial';
-      const unit = getBiomarkerUnit(name);
-      context.fillText(`${value} ${unit}`, canvas.width / 2, 58);
-      
-      // Status badge
-      context.fillStyle = statusColor;
-      context.font = 'Bold 14px -apple-system, BlinkMacSystemFont, Arial';
-      context.fillText(status.toUpperCase(), canvas.width / 2, 80);
-      
-      // Create sprite with better scaling
-      const texture = new THREE.CanvasTexture(canvas);
-      texture.needsUpdate = true;
-      
-      const spriteMaterial = new THREE.SpriteMaterial({ 
-        map: texture, 
-        transparent: true,
-        alphaTest: 0.001
-      });
-      const sprite = new THREE.Sprite(spriteMaterial);
-      
-      // Position label offset from biomarker
-      const labelOffset = position.clone();
-      labelOffset.y += 0.25;
-      // Offset slightly toward camera for better visibility
-      const cameraDirection = camera.position.clone().sub(position).normalize();
-      labelOffset.add(cameraDirection.multiplyScalar(0.1));
-      
-      sprite.position.copy(labelOffset);
-      sprite.scale.set(1.2, 0.6, 1);
-      sprite.userData = { type: 'biomarkerLabel', biomarker: name };
-      
-      scene.add(sprite);
-      biomarkerOverlays.set(`${name}_label`, sprite);
-    }
+    // Remove old 3D label creation - now using HTML widgets
 
     function getBiomarkerUnit(biomarkerName) {
       const units = {
@@ -622,89 +553,12 @@
       return units[biomarkerName] || '';
     }
 
-    // Add mouse interaction for biomarker selection
+    // HTML biomarkers handle their own click events - no 3D interaction needed
     function setupBiomarkerInteraction() {
-      renderer.domElement.addEventListener('click', onBiomarkerClick);
-      renderer.domElement.addEventListener('mousemove', onBiomarkerHover);
+      // No longer needed - HTML widgets handle their own events
     }
 
-    function onBiomarkerClick(event) {
-      updateMousePosition(event);
-      raycaster.setFromCamera(mouse, camera);
-      
-      const overlayObjects = Array.from(biomarkerOverlays.values());
-      const intersects = raycaster.intersectObjects(overlayObjects);
-      
-      if (intersects.length > 0) {
-        const clicked = intersects[0].object;
-        if (clicked.userData.biomarker) {
-          // Notify parent about biomarker selection
-          window.parent.postMessage({
-            type: 'biomarkerSelected',
-            biomarker: clicked.userData.biomarker,
-            value: clicked.userData.value,
-            status: clicked.userData.status
-          }, '*');
-          console.log(`🎯 Selected biomarker: ${clicked.userData.biomarker}`);
-        }
-      }
-    }
-
-    function onBiomarkerHover(event) {
-      updateMousePosition(event);
-      raycaster.setFromCamera(mouse, camera);
-      
-      const overlayObjects = Array.from(biomarkerOverlays.values());
-      const intersects = raycaster.intersectObjects(overlayObjects);
-      
-      // Reset cursor
-      renderer.domElement.style.cursor = 'default';
-      
-      if (intersects.length > 0) {
-        renderer.domElement.style.cursor = 'pointer';
-      }
-    }
-
-    function updateMousePosition(event) {
-      const rect = renderer.domElement.getBoundingClientRect();
-      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-    }
-
-    // Animate biomarker overlays
-    function animateBiomarkers() {
-      const time = Date.now() * 0.001;
-      
-      biomarkerOverlays.forEach((overlay, name) => {
-        if (overlay.userData.type === 'biomarkerLabel') {
-          // Keep labels facing camera
-          overlay.lookAt(camera.position);
-          return;
-        }
-        
-        // Pulsing animation for biomarker groups
-        const pulseSpeed = overlay.userData.pulseSpeed || 1;
-        const pulse = Math.sin(time * pulseSpeed) * 0.15 + 1;
-        
-        // Apply pulse to the sphere only (first child)
-        if (overlay.children[0]) {
-          overlay.children[0].scale.setScalar(pulse);
-        }
-        
-        // Gentle floating motion
-        const originalPos = overlay.userData.originalPosition;
-        if (originalPos) {
-          const float = Math.sin(time * 0.8 + name.length) * 0.02;
-          overlay.position.copy(originalPos);
-          overlay.position.y += float;
-        }
-        
-        // Rotate the outer ring for visual appeal
-        if (overlay.children[1]) {
-          overlay.children[1].rotation.z += 0.01;
-        }
-      });
-    }
+    // HTML biomarkers don't need 3D animation - CSS handles the pulsing
 
     window.loadSMPLAvatar = async function(patientId, height, weight, gender, opts={}) {
       currentPatientId = patientId;
