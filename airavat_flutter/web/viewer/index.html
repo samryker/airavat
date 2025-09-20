@@ -258,6 +258,11 @@
 
       scene.add(root);
       currentMesh = root;
+      
+      // Force matrix update for proper bounds calculation
+      root.updateMatrixWorld(true);
+      
+      console.log('✅ SMPL model loaded, ready for biomarkers');
     }
 
     async function loadPlaceholder(parameters) {
@@ -329,6 +334,9 @@
     async function loadPatientBiomarkers(patientId) {
       try {
         setStatus(`Loading biomarkers for ${patientId}...`);
+        
+        // Wait for SMPL model to be fully loaded and positioned
+        await new Promise(resolve => setTimeout(resolve, 500));
         
         // Try to get biomarkers from digital twin first
         const twinResponse = await fetch(`${SMPL_API_BASE}/digital_twin/${patientId}`);
@@ -446,69 +454,54 @@
     }
 
     function getBiomarkerPosition(biomarkerName) {
-      if (!currentMesh) return new THREE.Vector3(0, 2, 0.5);
+      if (!currentMesh) return new THREE.Vector3(0, 1, 0.5);
       
-      // Get SMPL body bounds
+      // Get SMPL body bounds and update them
+      currentMesh.updateMatrixWorld(true);
       const bbox = new THREE.Box3().setFromObject(currentMesh);
       const center = bbox.getCenter(new THREE.Vector3());
       const size = bbox.getSize(new THREE.Vector3());
       
-      // Calculate positions around the body in visible range
-      const radius = Math.max(size.x, size.z) * 0.8; // Distance from body center
-      const bodyHeight = size.y;
-      const bodyBottom = bbox.min.y;
-      const bodyTop = bbox.max.y;
+      console.log(`📐 Body bounds: center=${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)}, size=${size.x.toFixed(2)}, ${size.y.toFixed(2)}, ${size.z.toFixed(2)}`);
       
-      // Define biomarker positions relative to body anatomy
+      // Use smaller, more realistic positioning relative to actual body
+      const radius = Math.max(size.x, size.z) * 1.2; // Closer to body
+      const bodyHeight = size.y;
+      const bodyBottom = center.y - bodyHeight / 2;
+      const bodyTop = center.y + bodyHeight / 2;
+      
+      // Define biomarker positions as simple left/right alternating pattern
+      const biomarkerNames = Object.keys(biomarkers || {});
+      const biomarkerIndex = biomarkerNames.indexOf(biomarkerName);
+      
+      // Simple left/right alternating positions around body
+      const isLeft = biomarkerIndex % 2 === 0;
+      const verticalIndex = Math.floor(biomarkerIndex / 2);
+      
+      // Position biomarkers in vertical stack on left and right sides
       const anatomicalPositions = {
-        // Head/Brain area (top)
-        'temperature': { height: 0.9, side: 0, angle: 0 },
-        'oxygen_saturation': { height: 0.85, side: 1, angle: 30 },
-        
-        // Upper chest (heart, lungs)
-        'heart_rate': { height: 0.75, side: -1, angle: 150 },
-        'hemoglobin': { height: 0.75, side: 1, angle: 30 },
-        
-        // Mid chest (blood pressure)
-        'blood_pressure_systolic': { height: 0.65, side: 1, angle: 60 },
-        'blood_pressure_diastolic': { height: 0.65, side: -1, angle: 120 },
-        
-        // Abdomen (metabolic)
-        'glucose': { height: 0.5, side: 1, angle: 90 },
-        'cholesterol': { height: 0.5, side: -1, angle: 270 },
-        
-        // Lower body
-        'bmi': { height: 0.35, side: 0, angle: 0 }
+        'temperature': { heightOffset: 0.4, side: isLeft ? -1 : 1 },
+        'oxygen_saturation': { heightOffset: 0.3, side: isLeft ? -1 : 1 },
+        'heart_rate': { heightOffset: 0.2, side: isLeft ? -1 : 1 },
+        'hemoglobin': { heightOffset: 0.1, side: isLeft ? -1 : 1 },
+        'blood_pressure_systolic': { heightOffset: 0.0, side: isLeft ? -1 : 1 },
+        'blood_pressure_diastolic': { heightOffset: -0.1, side: isLeft ? -1 : 1 },
+        'glucose': { heightOffset: -0.2, side: isLeft ? -1 : 1 },
+        'cholesterol': { heightOffset: -0.3, side: isLeft ? -1 : 1 },
+        'bmi': { heightOffset: -0.4, side: isLeft ? -1 : 1 }
       };
       
-      const config = anatomicalPositions[biomarkerName];
+      const config = anatomicalPositions[biomarkerName] || { 
+        heightOffset: (verticalIndex * 0.2) - 0.4, 
+        side: isLeft ? -1 : 1 
+      };
       
-      if (!config) {
-        // Auto-distribute unknown biomarkers evenly around body
-        const biomarkerNames = Object.keys(biomarkers || {});
-        const index = biomarkerNames.indexOf(biomarkerName);
-        const totalBiomarkers = biomarkerNames.length;
-        const angleStep = 360 / Math.max(totalBiomarkers, 6);
-        const autoAngle = index * angleStep;
-        const autoHeight = 0.6 - (index % 3) * 0.1; // Vary height slightly
-        
-        const heightRatio = autoHeight;
-        const y = bodyBottom + (bodyHeight * heightRatio);
-        const angleRad = (autoAngle * Math.PI) / 180;
-        const x = center.x + (radius * Math.cos(angleRad));
-        const z = center.z + (radius * Math.sin(angleRad));
-        
-        return new THREE.Vector3(x, y, z);
-      }
+      // Calculate simple left/right positioning
+      const y = center.y + config.heightOffset;
+      const x = center.x + (config.side * radius * 0.5); // Closer to body
+      const z = center.z + (radius * 0.3); // Slightly forward for visibility
       
-      // Calculate position for known biomarkers
-      const heightRatio = config.height;
-      const y = bodyBottom + (bodyHeight * heightRatio);
-      
-      // Position around body with proper spacing
-      const angleRad = (config.angle * Math.PI) / 180;
-      const x = center.x + (config.side * radius * Math.cos(angleRad));
-      const z = center.z + (radius * Math.sin(angleRad));
+      console.log(`📍 ${biomarkerName}: x=${x.toFixed(2)}, y=${y.toFixed(2)}, z=${z.toFixed(2)} (${isLeft ? 'LEFT' : 'RIGHT'})`);
       
       return new THREE.Vector3(x, y, z);
     }
