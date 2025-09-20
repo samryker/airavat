@@ -277,7 +277,7 @@ except Exception as e:
 # In a production system, you might manage this differently (e.g., with dependency injection).
 medical_agent = MedicalAgent(db=db, mcp_agent=mcp_agent) # Pass Firestore client and MCP agent to the agent
 
-// Initialize additional services (optional)
+# Initialize additional services (optional)
 genetic_service = None
 notification_service = None
 user_data_service = None
