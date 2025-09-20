@@ -649,6 +649,44 @@ async def upload_genetic_report(
         logger.exception(f"Error uploading genetic report: {e}")
         raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
 
+@app.post("/genetic/analyze")
+async def analyze_genetic_file_serverless(
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
+    report_type: str = Form("unknown")
+):
+    """
+    Serverless genetic file analysis - no storage, direct HF inference
+    """
+    logger.info(f"Serverless genetic analysis for user: {user_id}, file: {file.filename}")
+    try:
+        if not genetic_service:
+            raise HTTPException(status_code=503, detail="Genetic analysis service not available")
+        
+        # Read file data
+        file_data = await file.read()
+        
+        # Check file size (5MB limit for serverless)
+        max_size = 5 * 1024 * 1024  # 5MB
+        if len(file_data) > max_size:
+            raise HTTPException(status_code=413, detail="File too large for serverless analysis. Maximum size is 5MB")
+        
+        # Perform serverless analysis
+        result = await genetic_service.analyze_file_serverless(
+            user_id=user_id,
+            file_data=file_data,
+            filename=file.filename,
+            report_type=report_type
+        )
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error in serverless genetic analysis: {e}")
+        raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
+
 @app.get("/genetic/reports/{report_id}")
 async def get_genetic_report(report_id: str):
     """

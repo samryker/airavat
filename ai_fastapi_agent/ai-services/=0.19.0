@@ -1,0 +1,23 @@
+Collecting huggingface-hub
+  Obtaining dependency information for huggingface-hub from https://files.pythonhosted.org/packages/fe/85/a18508becfa01f1e4351b5e18651b06d210dbd96debccd48a452acccb901/huggingface_hub-0.35.0-py3-none-any.whl.metadata
+  Downloading huggingface_hub-0.35.0-py3-none-any.whl.metadata (14 kB)
+Requirement already satisfied: filelock in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from huggingface-hub) (3.18.0)
+Requirement already satisfied: fsspec>=2023.5.0 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from huggingface-hub) (2025.7.0)
+Requirement already satisfied: packaging>=20.9 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from huggingface-hub) (25.0)
+Requirement already satisfied: pyyaml>=5.1 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from huggingface-hub) (6.0.2)
+Requirement already satisfied: requests in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from huggingface-hub) (2.31.0)
+Requirement already satisfied: tqdm>=4.42.1 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from huggingface-hub) (4.67.1)
+Requirement already satisfied: typing-extensions>=3.7.4.3 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from huggingface-hub) (4.14.1)
+Collecting hf-xet<2.0.0,>=1.1.3 (from huggingface-hub)
+  Obtaining dependency information for hf-xet<2.0.0,>=1.1.3 from https://files.pythonhosted.org/packages/f7/a2/343e6d05de96908366bdc0081f2d8607d61200be2ac802769c4284cc65bd/hf_xet-1.1.10-cp37-abi3-macosx_10_12_x86_64.whl.metadata
+  Downloading hf_xet-1.1.10-cp37-abi3-macosx_10_12_x86_64.whl.metadata (4.7 kB)
+Requirement already satisfied: charset-normalizer<4,>=2 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from requests->huggingface-hub) (3.4.2)
+Requirement already satisfied: idna<4,>=2.5 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from requests->huggingface-hub) (3.10)
+Requirement already satisfied: urllib3<3,>=1.21.1 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from requests->huggingface-hub) (2.5.0)
+Requirement already satisfied: certifi>=2017.4.17 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from requests->huggingface-hub) (2025.7.14)
+Downloading huggingface_hub-0.35.0-py3-none-any.whl (563 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 563.4/563.4 kB 10.1 MB/s eta 0:00:00
+Downloading hf_xet-1.1.10-cp37-abi3-macosx_10_12_x86_64.whl (2.8 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.8/2.8 MB 20.0 MB/s eta 0:00:00
+Installing collected packages: hf-xet, huggingface-hub
+Successfully installed hf-xet-1.1.10 huggingface-hub-0.35.0
