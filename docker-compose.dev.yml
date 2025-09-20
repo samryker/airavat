@@ -5,6 +5,7 @@ services:
       - "8000:8000"
     environment:
       - GEMINI_API_KEY=
+      - GOOGLE_API_KEY=
     volumes:
       - ./ai_fastapi_agent/ai-services/.env:/app/ai-services/.env:ro
 

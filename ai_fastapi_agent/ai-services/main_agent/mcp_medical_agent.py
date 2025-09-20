@@ -15,19 +15,24 @@ import logging
 # Module-level logger used throughout this module
 logger = logging.getLogger("api")
 
-# Load environment variables
-load_dotenv()
+# Load environment variables (override to ensure .env takes effect)
+load_dotenv(override=True)
+try:
+    _module_env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+    load_dotenv(_module_env_path, override=True)
+except Exception:
+    pass
 
-# Initialize Gemini client
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel("gemini-1.5-pro")
-    logger.info("Gemini client initialized successfully in MCP agent")
-else:
+# Use the shared Gemini client from gemini_service to avoid reconfiguring the SDK
+try:
+    from .gemini_service import model as model, is_gemini_available as _gemini_available
+    if model is not None:
+        logger.info("Gemini client initialized successfully in MCP agent (shared)")
+    else:
+        logger.warning("Shared Gemini client unavailable - MCP agent will use fallback responses")
+except Exception as _e:
+    logger.exception(f"Failed to import shared Gemini client: {_e}")
     model = None
-    logger.warning("Gemini API key not found - MCP agent will use fallback responses")
 
 # Try to import MCP dependencies, but handle gracefully if not available
 try:
@@ -60,7 +65,7 @@ except ImportError:
 from .data_models import PatientQuery, AgentResponse, TreatmentSuggestion
 from .firestore_service import FirestoreService
 
-# Initialize Gemini model reference
+# Initialize Gemini model reference (shared)
 gemini_model = model
 if gemini_model:
     print("✅ Gemini API initialized successfully. AI responses enabled.")
@@ -143,8 +148,11 @@ class RealGeminiLLM:
             else:
                 prompt = str(prompt_or_messages)
             
-            # Call Gemini API
-            response = await gemini_model.generate_content_async(prompt)
+            # Call Gemini API (compat with sync SDK versions)
+            if hasattr(gemini_model, "generate_content_async"):
+                response = await gemini_model.generate_content_async(prompt)
+            else:
+                response = await asyncio.to_thread(gemini_model.generate_content, prompt)
             return AIMessage(response.text)
             
         except Exception as e:
@@ -635,7 +643,10 @@ Response:"""
             ]
             """
             
-            response = await gemini_model.generate_content_async(suggestion_prompt)
+            if hasattr(gemini_model, "generate_content_async"):
+                response = await gemini_model.generate_content_async(suggestion_prompt)
+            else:
+                response = await asyncio.to_thread(gemini_model.generate_content, suggestion_prompt)
             
             try:
                 suggestions_data = json.loads(response.text)

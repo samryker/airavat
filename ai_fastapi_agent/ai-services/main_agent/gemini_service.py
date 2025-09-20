@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from typing import Dict, Any, List, Union
 from .data_models import PatientQuery, StructuredGeminiOutput, GeminiResponseFeatures
 import datetime
+import asyncio
 import json
 import logging
 
@@ -11,19 +12,28 @@ import logging
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# Load environment variables
-load_dotenv()
+# Load environment variables (try current working dir and module dir)
+load_dotenv(override=True)
+try:
+    _module_env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+    load_dotenv(_module_env_path, override=True)
+except Exception:
+    pass
 
-# Initialize Gemini service
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# Initialize Gemini service (support both GEMINI_API_KEY and GOOGLE_API_KEY)
+_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel("gemini-1.5-pro")
-    logger.info("Gemini service initialized successfully")
+if _API_KEY:
+    try:
+        genai.configure(api_key=_API_KEY)
+        model = genai.GenerativeModel("gemini-1.5-pro")
+        logger.info("Gemini service initialized successfully")
+    except Exception as _e:
+        logger.exception(f"Failed to initialize Gemini service: {_e}")
+        model = None
 else:
     model = None
-    logger.warning("Gemini API key not found - service will use fallback responses")
+    logger.warning("Gemini/Google API key not found - service will use fallback responses")
 
 def is_gemini_available() -> bool:
     """Check if Gemini API is available and configured."""
@@ -162,7 +172,11 @@ Remember to:
 
 Respond in a conversational, caring tone."""
 
-        response = await model.generate_content_async(prompt)
+        # Compatibility: use async method if available, otherwise offload sync call
+        if hasattr(model, "generate_content_async"):
+            response = await model.generate_content_async(prompt)
+        else:
+            response = await asyncio.to_thread(model.generate_content, prompt)
         response_text = response.text if response else "I apologize, but I'm having trouble processing your request right now. Please try again or consult with a healthcare professional."
         
         # Extract keywords from the response and query

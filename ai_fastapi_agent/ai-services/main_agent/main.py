@@ -14,6 +14,7 @@ from typing import Dict, Any, List
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 from google import generativeai as genai
+from .gemini_service import is_gemini_available as _gemini_available, model as _gemini_model
 
 # Optional imports for new services
 try:
@@ -1028,10 +1029,9 @@ async def update_user_profile(user_id: str, profile_data: dict):
 @app.post("/files/analyze")
 async def analyze_file(file: UploadFile = File(...)):
     try:
-        # api_key = os.getenv("GEMINI_API_KEY") # Removed GEMINI_API_KEY check
-        # if not api_key:
-        #     raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
-        # genai.configure(api_key=api_key) # Removed genai.configure
+        # Ensure Gemini is configured
+        if not _gemini_available():
+            raise HTTPException(status_code=503, detail="Gemini is not configured. Set GOOGLE_API_KEY or GEMINI_API_KEY.")
 
         # Read file bytes
         content = await file.read()
@@ -1054,7 +1054,8 @@ async def analyze_file(file: UploadFile = File(...)):
                 display_name=file.filename or "upload"
             )
 
-            model = genai.GenerativeModel("gemini-1.5-pro")
+            # Use the configured model from gemini_service
+            model = _gemini_model or genai.GenerativeModel("gemini-1.5-pro")
             prompt = (
                 "You are a medical assistant. Read the uploaded file and provide: "
                 "1) A concise medical summary (<= 8 bullet points). "
@@ -1087,12 +1088,13 @@ async def check_gemini_config():
     try:
         from .gemini_service import is_gemini_available
         gemini_available = is_gemini_available()
-        
+        api_key_env = "GEMINI_API_KEY" if os.getenv("GEMINI_API_KEY") else ("GOOGLE_API_KEY" if os.getenv("GOOGLE_API_KEY") else None)
         return {
             "gemini_configured": gemini_available,
             "message": "Gemini API is properly configured and available" if gemini_available else "Gemini API key not found or invalid",
             "status": "enabled" if gemini_available else "disabled",
-            "api_key_present": bool(os.getenv("GEMINI_API_KEY"))
+            "api_key_present": api_key_env is not None,
+            "api_key_env": api_key_env
         }
     except Exception as e:
         return {
