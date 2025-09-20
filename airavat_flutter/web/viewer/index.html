@@ -383,29 +383,62 @@
         const status = calculateBiomarkerStatus(name, value);
         const color = getBiomarkerColor(status);
         
-        // Create pulsing sphere overlay
-        const geometry = new THREE.SphereGeometry(0.08, 16, 16);
-        const material = new THREE.MeshPhongMaterial({
+        // Create attractive biomarker indicator
+        const group = new THREE.Group();
+        
+        // Main sphere with glow effect
+        const sphereGeometry = new THREE.SphereGeometry(0.06, 32, 32);
+        const sphereMaterial = new THREE.MeshPhongMaterial({
           color: color,
           transparent: true,
-          opacity: 0.8,
+          opacity: 0.9,
           emissive: color,
-          emissiveIntensity: 0.3
+          emissiveIntensity: 0.4,
+          shininess: 100
         });
         
-        const overlay = new THREE.Mesh(geometry, material);
-        overlay.position.copy(position);
-        overlay.userData = {
+        const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+        group.add(sphere);
+        
+        // Outer glow ring
+        const ringGeometry = new THREE.RingGeometry(0.08, 0.12, 16);
+        const ringMaterial = new THREE.MeshBasicMaterial({
+          color: color,
+          transparent: true,
+          opacity: 0.3,
+          side: THREE.DoubleSide
+        });
+        
+        const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+        ring.lookAt(camera.position); // Face camera
+        group.add(ring);
+        
+        // Connection line to body
+        const lineGeometry = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(0, 0, 0),
+          position.clone().sub(position).normalize().multiplyScalar(-0.15)
+        ]);
+        const lineMaterial = new THREE.LineBasicMaterial({
+          color: color,
+          transparent: true,
+          opacity: 0.5
+        });
+        const line = new THREE.Line(lineGeometry, lineMaterial);
+        group.add(line);
+        
+        group.position.copy(position);
+        group.userData = {
           biomarker: name,
           value: value,
           status: status,
-          pulseSpeed: status === 'normal' ? 1 : 2
+          pulseSpeed: status === 'normal' ? 1 : 2,
+          originalPosition: position.clone()
         };
         
-        scene.add(overlay);
-        biomarkerOverlays.set(name, overlay);
+        scene.add(group);
+        biomarkerOverlays.set(name, group);
         
-        // Create floating label
+        // Create improved floating label
         createBiomarkerLabel(name, value, status, position);
       });
       
@@ -413,20 +446,71 @@
     }
 
     function getBiomarkerPosition(biomarkerName) {
-      // Map biomarkers to body positions relative to SMPL model
-      const positions = {
-        'heart_rate': new THREE.Vector3(-0.3, 2.2, 0.4),
-        'blood_pressure_systolic': new THREE.Vector3(0.3, 2.2, 0.4),
-        'blood_pressure_diastolic': new THREE.Vector3(0.3, 2.0, 0.4),
-        'glucose': new THREE.Vector3(0.4, 1.8, 0.3),
-        'cholesterol': new THREE.Vector3(-0.4, 1.8, 0.3),
-        'hemoglobin': new THREE.Vector3(0, 2.4, 0.5),
-        'oxygen_saturation': new THREE.Vector3(0, 2.6, 0.4),
-        'temperature': new THREE.Vector3(0, 3.0, 0.2),
-        'bmi': new THREE.Vector3(0, 1.5, 0.6)
+      if (!currentMesh) return new THREE.Vector3(0, 2, 0.5);
+      
+      // Get SMPL body bounds
+      const bbox = new THREE.Box3().setFromObject(currentMesh);
+      const center = bbox.getCenter(new THREE.Vector3());
+      const size = bbox.getSize(new THREE.Vector3());
+      
+      // Calculate positions around the body in visible range
+      const radius = Math.max(size.x, size.z) * 0.8; // Distance from body center
+      const bodyHeight = size.y;
+      const bodyBottom = bbox.min.y;
+      const bodyTop = bbox.max.y;
+      
+      // Define biomarker positions relative to body anatomy
+      const anatomicalPositions = {
+        // Head/Brain area (top)
+        'temperature': { height: 0.9, side: 0, angle: 0 },
+        'oxygen_saturation': { height: 0.85, side: 1, angle: 30 },
+        
+        // Upper chest (heart, lungs)
+        'heart_rate': { height: 0.75, side: -1, angle: 150 },
+        'hemoglobin': { height: 0.75, side: 1, angle: 30 },
+        
+        // Mid chest (blood pressure)
+        'blood_pressure_systolic': { height: 0.65, side: 1, angle: 60 },
+        'blood_pressure_diastolic': { height: 0.65, side: -1, angle: 120 },
+        
+        // Abdomen (metabolic)
+        'glucose': { height: 0.5, side: 1, angle: 90 },
+        'cholesterol': { height: 0.5, side: -1, angle: 270 },
+        
+        // Lower body
+        'bmi': { height: 0.35, side: 0, angle: 0 }
       };
       
-      return positions[biomarkerName] || new THREE.Vector3(0, 2, 0.5);
+      const config = anatomicalPositions[biomarkerName];
+      
+      if (!config) {
+        // Auto-distribute unknown biomarkers evenly around body
+        const biomarkerNames = Object.keys(biomarkers || {});
+        const index = biomarkerNames.indexOf(biomarkerName);
+        const totalBiomarkers = biomarkerNames.length;
+        const angleStep = 360 / Math.max(totalBiomarkers, 6);
+        const autoAngle = index * angleStep;
+        const autoHeight = 0.6 - (index % 3) * 0.1; // Vary height slightly
+        
+        const heightRatio = autoHeight;
+        const y = bodyBottom + (bodyHeight * heightRatio);
+        const angleRad = (autoAngle * Math.PI) / 180;
+        const x = center.x + (radius * Math.cos(angleRad));
+        const z = center.z + (radius * Math.sin(angleRad));
+        
+        return new THREE.Vector3(x, y, z);
+      }
+      
+      // Calculate position for known biomarkers
+      const heightRatio = config.height;
+      const y = bodyBottom + (bodyHeight * heightRatio);
+      
+      // Position around body with proper spacing
+      const angleRad = (config.angle * Math.PI) / 180;
+      const x = center.x + (config.side * radius * Math.cos(angleRad));
+      const z = center.z + (radius * Math.sin(angleRad));
+      
+      return new THREE.Vector3(x, y, z);
     }
 
     function calculateBiomarkerStatus(biomarkerName, value) {
@@ -462,42 +546,87 @@
     }
 
     function createBiomarkerLabel(name, value, status, position) {
-      // Create text sprite
+      // Create modern, clean biomarker label
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d');
-      canvas.width = 200;
-      canvas.height = 80;
+      canvas.width = 280;
+      canvas.height = 100;
       
-      // Background
-      context.fillStyle = 'rgba(0, 0, 0, 0.8)';
-      context.fillRect(0, 0, canvas.width, canvas.height);
+      // Modern rounded background with gradient
+      const gradient = context.createLinearGradient(0, 0, 0, canvas.height);
+      gradient.addColorStop(0, 'rgba(0, 0, 0, 0.9)');
+      gradient.addColorStop(1, 'rgba(20, 20, 20, 0.9)');
       
-      // Text
+      context.fillStyle = gradient;
+      context.roundRect(0, 0, canvas.width, canvas.height, 12);
+      context.fill();
+      
+      // Border with status color
+      const statusColor = status === 'normal' ? '#00ff88' : 
+                         status === 'warning' ? '#ffaa00' : '#ff4444';
+      context.strokeStyle = statusColor;
+      context.lineWidth = 2;
+      context.roundRect(2, 2, canvas.width - 4, canvas.height - 4, 10);
+      context.stroke();
+      
+      // Title text
       context.fillStyle = '#ffffff';
-      context.font = 'Bold 16px Arial';
+      context.font = 'Bold 18px -apple-system, BlinkMacSystemFont, Arial';
       context.textAlign = 'center';
       
-      const displayName = name.replace(/_/g, ' ').toUpperCase();
-      context.fillText(displayName, canvas.width / 2, 25);
-      context.fillText(`${value}`, canvas.width / 2, 45);
+      const displayName = name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      context.fillText(displayName, canvas.width / 2, 30);
       
-      // Status indicator
-      const statusColor = status === 'normal' ? '#00ff00' : '#ff4400';
+      // Value text
       context.fillStyle = statusColor;
-      context.fillText(status.toUpperCase(), canvas.width / 2, 65);
+      context.font = 'Bold 24px -apple-system, BlinkMacSystemFont, Arial';
+      const unit = getBiomarkerUnit(name);
+      context.fillText(`${value} ${unit}`, canvas.width / 2, 58);
       
-      // Create sprite
+      // Status badge
+      context.fillStyle = statusColor;
+      context.font = 'Bold 14px -apple-system, BlinkMacSystemFont, Arial';
+      context.fillText(status.toUpperCase(), canvas.width / 2, 80);
+      
+      // Create sprite with better scaling
       const texture = new THREE.CanvasTexture(canvas);
-      const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true });
+      texture.needsUpdate = true;
+      
+      const spriteMaterial = new THREE.SpriteMaterial({ 
+        map: texture, 
+        transparent: true,
+        alphaTest: 0.001
+      });
       const sprite = new THREE.Sprite(spriteMaterial);
       
-      sprite.position.copy(position);
-      sprite.position.y += 0.2;
-      sprite.scale.set(0.8, 0.4, 1);
+      // Position label offset from biomarker
+      const labelOffset = position.clone();
+      labelOffset.y += 0.25;
+      // Offset slightly toward camera for better visibility
+      const cameraDirection = camera.position.clone().sub(position).normalize();
+      labelOffset.add(cameraDirection.multiplyScalar(0.1));
+      
+      sprite.position.copy(labelOffset);
+      sprite.scale.set(1.2, 0.6, 1);
       sprite.userData = { type: 'biomarkerLabel', biomarker: name };
       
       scene.add(sprite);
       biomarkerOverlays.set(`${name}_label`, sprite);
+    }
+
+    function getBiomarkerUnit(biomarkerName) {
+      const units = {
+        'glucose': 'mg/dL',
+        'cholesterol': 'mg/dL',
+        'hemoglobin': 'g/dL',
+        'heart_rate': 'bpm',
+        'blood_pressure_systolic': 'mmHg',
+        'blood_pressure_diastolic': 'mmHg',
+        'temperature': '°F',
+        'oxygen_saturation': '%',
+        'bmi': 'kg/m²'
+      };
+      return units[biomarkerName] || '';
     }
 
     // Add mouse interaction for biomarker selection
@@ -554,15 +683,33 @@
       const time = Date.now() * 0.001;
       
       biomarkerOverlays.forEach((overlay, name) => {
-        if (overlay.userData.type === 'biomarkerLabel') return;
+        if (overlay.userData.type === 'biomarkerLabel') {
+          // Keep labels facing camera
+          overlay.lookAt(camera.position);
+          return;
+        }
         
-        // Pulsing animation
+        // Pulsing animation for biomarker groups
         const pulseSpeed = overlay.userData.pulseSpeed || 1;
-        const pulse = Math.sin(time * pulseSpeed) * 0.2 + 1;
-        overlay.scale.setScalar(pulse);
+        const pulse = Math.sin(time * pulseSpeed) * 0.15 + 1;
         
-        // Gentle floating
-        overlay.position.y += Math.sin(time * 0.5 + name.length) * 0.001;
+        // Apply pulse to the sphere only (first child)
+        if (overlay.children[0]) {
+          overlay.children[0].scale.setScalar(pulse);
+        }
+        
+        // Gentle floating motion
+        const originalPos = overlay.userData.originalPosition;
+        if (originalPos) {
+          const float = Math.sin(time * 0.8 + name.length) * 0.02;
+          overlay.position.copy(originalPos);
+          overlay.position.y += float;
+        }
+        
+        // Rotate the outer ring for visual appeal
+        if (overlay.children[1]) {
+          overlay.children[1].rotation.z += 0.01;
+        }
       });
     }
 
