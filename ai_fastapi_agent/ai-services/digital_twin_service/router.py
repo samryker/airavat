@@ -79,15 +79,61 @@ async def upsert_twin(patient_id: str, payload: DigitalTwinPayload) -> DigitalTw
     """Create or update a digital twin for the specified patient."""
     record = DigitalTwinRecord(patient_id=patient_id, **payload.model_dump())
     _twin_store[patient_id] = record
+    # Persist for cross-instance availability
+    try:
+        db = _get_db()
+        if db:
+            db.collection("twin_customizations").document(patient_id).set({
+                "userId": patient_id,
+                "height_cm": record.height_cm,
+                "weight_kg": record.weight_kg,
+                "biomarkers": record.biomarkers or {},
+                "lastUpdated": datetime.utcnow(),
+            }, merge=True)
+    except Exception:
+        pass
     return record
 
 
 @router.get("/{patient_id}", response_model=DigitalTwinRecord)
 async def get_twin(patient_id: str) -> DigitalTwinRecord:
-    """Retrieve the digital twin for a patient."""
+    """Retrieve the digital twin for a patient.
+    Fallback order: in-memory -> Firestore twin_customizations -> default stub.
+    """
+    # 1) In-memory
     record = _twin_store.get(patient_id)
-    if not record:
-        raise HTTPException(status_code=404, detail="Digital twin not found")
+    if record:
+        return record
+
+    # 2) Firestore persistence
+    db = _get_db()
+    if db:
+        try:
+            doc = db.collection("twin_customizations").document(patient_id).get()
+            if doc.exists:
+                data = doc.to_dict() or {}
+                height_cm = float(data.get("height_cm") or 170.0)
+                weight_kg = float(data.get("weight_kg") or 70.0)
+                biomarkers = data.get("biomarkers") or {}
+                record = DigitalTwinRecord(
+                    patient_id=patient_id,
+                    height_cm=height_cm,
+                    weight_kg=weight_kg,
+                    biomarkers=biomarkers,
+                )
+                _twin_store[patient_id] = record
+                return record
+        except Exception:
+            pass
+
+    # 3) Default stub (avoid 404 to keep UI functional)
+    record = DigitalTwinRecord(
+        patient_id=patient_id,
+        height_cm=170.0,
+        weight_kg=70.0,
+        biomarkers={},
+    )
+    _twin_store[patient_id] = record
     return record
 
 
