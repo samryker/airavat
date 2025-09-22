@@ -15,11 +15,11 @@ import logging
 # Module-level logger used throughout this module
 logger = logging.getLogger("api")
 
-# Load environment variables (override to ensure .env takes effect)
-load_dotenv(override=True)
+# Load environment variables (do not override CI/CD secrets)
+load_dotenv()
 try:
     _module_env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
-    load_dotenv(_module_env_path, override=True)
+    load_dotenv(_module_env_path)
 except Exception:
     pass
 

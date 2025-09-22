@@ -110,6 +110,32 @@ class GeneticAnalysisService:
             self.hf_client = None
             logger.warning(f"Hugging Face client not initialized: {e}")
 
+    def _detect_report_type(self, filename: str, file_data: bytes) -> str:
+        try:
+            name = (filename or "").lower()
+            if name.endswith(".vcf"):
+                return ReportType.VCF_FILE.value
+            if name.endswith(".fasta") or name.endswith(".fa"):
+                return ReportType.FASTA_FILE.value
+            if name.endswith(".fastq") or name.endswith(".fq"):
+                return ReportType.FASTQ_FILE.value
+            if name.endswith(".pdf"):
+                return ReportType.LAB_REPORT.value
+            # Heuristic on content
+            try:
+                text = file_data[:64].decode("utf-8", errors="ignore")
+                if text.startswith("##fileformat=VCF"):
+                    return ReportType.VCF_FILE.value
+                if text.startswith(">"):
+                    return ReportType.FASTA_FILE.value
+                if text.startswith("@"):
+                    return ReportType.FASTQ_FILE.value
+            except Exception:
+                pass
+            return ReportType.UNKNOWN.value
+        except Exception:
+            return ReportType.UNKNOWN.value
+
     # -------------------
     # Upload & Parse
     # -------------------
@@ -359,7 +385,13 @@ class GeneticAnalysisService:
     async def _perform_ai_analysis(self, parsed_data: Dict[str, Any], report_type: str) -> Dict[str, Any]:
         try:
             if not self.hf_client:
-                return {"error": "Hugging Face client not initialized"}
+                return {
+                    "genetic_markers": [],
+                    "genes_analyzed": [],
+                    "clinical_significance": [],
+                    "raw_ner_output": [],
+                    "warning": "HF client not initialized"
+                }
 
             if report_type in [ReportType.LAB_REPORT.value, ReportType.UNKNOWN.value]:
                 text_input = parsed_data.get("raw_text", "")
@@ -387,7 +419,13 @@ class GeneticAnalysisService:
             return analysis_result
         except Exception as e:
             logger.error(f"Error performing HF NER analysis: {e}")
-            return {"error": str(e)}
+            return {
+                "genetic_markers": [],
+                "genes_analyzed": [],
+                "clinical_significance": [],
+                "raw_ner_output": [],
+                "error": str(e)
+            }
 
     # -------------------
     # Firestore & Storage Helpers
@@ -449,6 +487,44 @@ class GeneticAnalysisService:
         except Exception as e:
             logger.error(f"Error getting report {report_id}: {e}")
             return None
+
+    async def get_user_reports(self, user_id: str) -> List[Dict[str, Any]]:
+        try:
+            if not self.db:
+                return []
+            col = self.db.collection("genetic_analysis_results")
+            query = col.where("user_id", "==", user_id).order_by("processed_at", direction=firestore.Query.DESCENDING).limit(50)
+            docs = query.get()
+            results: List[Dict[str, Any]] = []
+            for d in docs:
+                item = d.to_dict()
+                item["id"] = d.id
+                results.append(item)
+            return results
+        except Exception as e:
+            logger.warning(f"Failed to get user reports: {e}")
+            return []
+
+    async def get_genetic_insights_for_llm(self, user_id: str) -> Dict[str, Any]:
+        try:
+            reports = await self.get_user_reports(user_id)
+            if not reports:
+                return {"has_genetic_data": False}
+            latest = reports[0]
+            return {
+                "has_genetic_data": True,
+                "markers_count": latest.get("markers_count", 0),
+                "genes_count": latest.get("genes_count", 0),
+                "analysis_summary": latest.get("analysis_summary"),
+                "last_analysis_date": latest.get("processed_at"),
+                "risk_factors": [],
+                "clinical_significance": [],
+                "key_findings": [],
+                "crispr_opportunities": [],
+            }
+        except Exception as e:
+            logger.warning(f"Failed to build genetic insights: {e}")
+            return {"has_genetic_data": False, "error": str(e)}
 
     async def _download_file(self, file_path: str) -> bytes:
         if not self.bucket or file_path == "memory_only":

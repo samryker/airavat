@@ -6,10 +6,10 @@ on:
   workflow_dispatch:
 
 env:
-  SERVICE_NAME: airavat-api
+  SERVICE_NAME: airavat-backend
   REGION: us-central1
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  IMAGE: gcr.io/${{ secrets.GCP_PROJECT_ID }}/airavat-api:${{ github.sha }}
+  IMAGE: gcr.io/${{ secrets.GCP_PROJECT_ID }}/airavat-backend:${{ github.sha }}
 
 jobs:
   deploy:
@@ -55,6 +55,14 @@ jobs:
           fi
           echo "GEMINI_API_KEY=$CLEAN_KEY" >> $GITHUB_ENV
 
+      - name: Prepare HF token
+        run: |
+          HF_RAW='${{ secrets.HF_TOKEN }}'
+          if [ -z "$HF_RAW" ]; then
+            echo "HF token is empty; set HF_TOKEN secret to enable genetic analysis" >&2
+          fi
+          echo "HF_TOKEN=$HF_RAW" >> $GITHUB_ENV
+
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy $SERVICE_NAME \
@@ -63,7 +71,16 @@ jobs:
             --region $REGION \
             --allow-unauthenticated \
             --port 8080 \
-            --set-env-vars GEMINI_API_KEY=$GEMINI_API_KEY,GEMINI_DISABLED=false
+            --timeout 240 \
+            --set-env-vars ^~^GEMINI_API_KEY=$GEMINI_API_KEY~HF_TOKEN=$HF_TOKEN~ALLOWED_ORIGINS=*~SMPL_ASSETS_BASE_URL=https://storage.googleapis.com/mira-smpl-assets/models
+
+      - name: Describe service env
+        run: |
+          echo "Service env vars:" && gcloud run services describe $SERVICE_NAME --region $REGION --format='table(spec.template.spec.containers[0].env)'
+          SERVICE_URL=$(gcloud run services describe $SERVICE_NAME --region $REGION --format='value(status.url)')
+          echo "Service URL: $SERVICE_URL"
+          echo "Debug config:" && curl -sS "$SERVICE_URL/debug/config" | jq . || true
+          echo "HF test:" && curl -sS "$SERVICE_URL/debug/hf_test" | jq . || true
 
       - name: Verify Gemini config endpoint
         run: |

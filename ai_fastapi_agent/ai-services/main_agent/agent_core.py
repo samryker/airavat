@@ -94,7 +94,7 @@ class MedicalAgent:
         if not self.db: return None
         try:
             patient_doc_ref = self.db.collection(u'patients').document(patient_id)
-            patient_doc = await patient_doc_ref.get() 
+            patient_doc = patient_doc_ref.get()
             if patient_doc.exists:
                 return patient_doc.to_dict()
             logger.info(f"No document found for patient_id: {patient_id} in 'patients' collection.")
@@ -109,8 +109,8 @@ class MedicalAgent:
         reports = []
         try:
             reports_query = self.db.collection(u'patients').document(patient_id).collection(u'lab_reports').order_by(u'reportDate', direction=firestore.Query.DESCENDING).limit(limit)
-            docs_stream = reports_query.stream() 
-            async for doc in docs_stream:
+            docs_stream = reports_query.stream()
+            for doc in docs_stream:
                 reports.append(doc.to_dict())
             if not reports:
                 logger.info(f"No lab reports found in subcollection for patient {patient_id}")
@@ -627,7 +627,7 @@ class MedicalAgent:
         if not self.db: return
         try:
             feedback_collection = self.db.collection(u'interaction_logs')
-            await feedback_collection.document(request_id).set(log_data)
+            feedback_collection.document(request_id).set(log_data)
             logger.info(f"Interaction logged for feedback: {request_id}")
         except Exception as e:
             logger.error(f"Error logging interaction for feedback: {e}")
@@ -640,7 +640,7 @@ class MedicalAgent:
         try:
             # Log feedback
             feedback_collection = self.db.collection(u'feedback')
-            await feedback_collection.document(feedback_data.request_id).set({
+            feedback_collection.document(feedback_data.request_id).set({
                 "patient_id": feedback_data.patient_id,
                 "request_id": feedback_data.request_id,
                 "outcome_works": feedback_data.outcome_works,
@@ -654,7 +654,7 @@ class MedicalAgent:
                 try:
                     # Get the original interaction
                     interaction_collection = self.db.collection(u'interaction_logs')
-                    interaction_doc = await interaction_collection.document(feedback_data.request_id).get()
+                    interaction_doc = interaction_collection.document(feedback_data.request_id).get()
                     
                     if interaction_doc.exists:
                         interaction_data = interaction_doc.to_dict()
@@ -686,7 +686,7 @@ class MedicalAgent:
             
             # Update in Firestore
             patient_ref = self.db.collection('patients').document(patient_id)
-            await patient_ref.update({
+            patient_ref.update({
                 'treatmentPlans': treatment_plan,
                 'updatedAt': firestore.SERVER_TIMESTAMP
             })

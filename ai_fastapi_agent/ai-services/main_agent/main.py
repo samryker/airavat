@@ -71,7 +71,7 @@ except Exception as e1:
             f"Digital Twin router import failed: top-level={e1}; relative={e2}"
         )
 
-load_dotenv() # Load environment variables from .env
+load_dotenv() # Load local env for dev only; CI/CD secrets already in env
 
 # Setup logging for the main application
 logger = logging.getLogger("api") # Can use a specific name
@@ -235,16 +235,27 @@ try:
         logger.info("Firebase Admin SDK initialized using Google Cloud default service account.")
         db = firestore.client()
     else:
-        # Local development - use service account key file
+        # Local or non-GCP: support both path-based and JSON env-based service account
         cred_path = os.getenv("FIREBASE_SERVICE_ACCOUNT_KEY_PATH", "airavat-a3a10-firebase-adminsdk-fbsvc-7b24d935c3.json")
-        
-        if os.path.exists(cred_path):
-            cred = credentials.Certificate(cred_path)
-            firebase_admin.initialize_app(cred)
-            logger.info(f"Firebase Admin SDK initialized using {cred_path}.")
-            db = firestore.client()
-        else:
-            logger.warning(f"Warning: Firebase credentials file not found at {cred_path}. Firebase features will be severely limited.")
+        cred_json = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
+        try:
+            if cred_json:
+                import json as _json
+                cred_dict = _json.loads(cred_json)
+                cred = credentials.Certificate(cred_dict)
+                firebase_admin.initialize_app(cred)
+                logger.info("Firebase Admin SDK initialized from FIREBASE_SERVICE_ACCOUNT_JSON env.")
+                db = firestore.client()
+            elif os.path.exists(cred_path):
+                cred = credentials.Certificate(cred_path)
+                firebase_admin.initialize_app(cred)
+                logger.info(f"Firebase Admin SDK initialized using {cred_path}.")
+                db = firestore.client()
+            else:
+                logger.warning(f"Warning: Firebase credentials not provided. Set FIREBASE_SERVICE_ACCOUNT_JSON or place key at {cred_path}.")
+                db = None
+        except Exception as cred_e:
+            logger.exception(f"Failed to initialize Firebase Admin SDK with provided credentials: {cred_e}")
             db = None
 except Exception as e:
     logger.exception(f"CRITICAL: Error initializing Firebase Admin SDK: {e}")
@@ -472,7 +483,7 @@ async def get_patient_context(patient_id: str):
             'biomarkers': {},
             'conversation_history': conversation_history,
             'mcp_memory': memory_data or {},
-            'last_updated': datetime.datetime.now().isoformat()
+            'last_updated': datetime.utcnow().isoformat()
         }
         
         if patient_doc.exists:
@@ -1141,6 +1152,86 @@ async def check_gemini_config():
             "message": f"Error checking Gemini configuration: {str(e)}",
             "status": "error"
         }
+
+@app.get("/debug/config")
+async def debug_config():
+    """Debug endpoint: show which critical envs are visible in Cloud Run and basic service availability."""
+    try:
+        hf_present = bool(os.getenv("HF_TOKEN"))
+        gemini_env = "GEMINI_API_KEY" if os.getenv("GEMINI_API_KEY") else ("GOOGLE_API_KEY" if os.getenv("GOOGLE_API_KEY") else None)
+        return {
+            "env": {
+                "GEMINI_KEY_PRESENT": gemini_env is not None,
+                "GEMINI_KEY_ENV": gemini_env,
+                "HF_TOKEN_PRESENT": hf_present,
+                "ALLOWED_ORIGINS": os.getenv("ALLOWED_ORIGINS"),
+                "SMPL_ASSETS_BASE_URL": os.getenv("SMPL_ASSETS_BASE_URL"),
+            },
+            "services": {
+                "gemini_available": _gemini_available(),
+                "genetic_service": bool(genetic_service is not None),
+                "hf_client_initialized": bool(getattr(genetic_service, "hf_client", None)) if genetic_service else False,
+                "context_retriever": bool(getattr(medical_agent, "context_retriever", None)),
+            }
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/debug/hf_test")
+async def debug_hf_test():
+    """Debug endpoint: run a minimal HF token_classification with a tiny input to verify HF_TOKEN works."""
+    try:
+        if not genetic_service or not getattr(genetic_service, "hf_client", None):
+            return {"ok": False, "why": "HF client not initialized", "HF_TOKEN_PRESENT": bool(os.getenv("HF_TOKEN"))}
+        client = genetic_service.hf_client
+        sample = "BRCA1 variant"
+        res = client.token_classification(sample, model="OpenMed/OpenMed-NER-GenomeDetect-SuperClinical-434M")
+        return {"ok": True, "count": len(res), "sample": sample, "first": res[0] if res else None}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+# Consolidated deep-diagnostic endpoint for Gemini, HF, and ContextRetriever
+@app.get("/debug/full_diagnostics")
+async def full_diagnostics(patient_id: str | None = None, sample_text: str | None = "BRCA1 variant and TP53 mutation"):
+    try:
+        diagnostics: Dict[str, Any] = {"env": {}, "gemini": {}, "hf": {}, "context": {}}
+        # Env
+        diagnostics["env"] = {
+            "GEMINI_KEY_PRESENT": bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")),
+            "GEMINI_KEY_ENV": "GEMINI_API_KEY" if os.getenv("GEMINI_API_KEY") else ("GOOGLE_API_KEY" if os.getenv("GOOGLE_API_KEY") else None),
+            "HF_TOKEN_PRESENT": bool(os.getenv("HF_TOKEN")),
+        }
+        # Gemini
+        try:
+            from .gemini_service import is_gemini_available
+            diagnostics["gemini"]["available"] = bool(is_gemini_available())
+        except Exception as e:
+            diagnostics["gemini"]["error"] = str(e)
+        # HF
+        try:
+            if genetic_service and getattr(genetic_service, "hf_client", None):
+                client = genetic_service.hf_client
+                res = client.token_classification(sample_text or "BRCA1 variant", model="OpenMed/OpenMed-NER-GenomeDetect-SuperClinical-434M")
+                diagnostics["hf"] = {"ok": True, "count": len(res), "first": res[0] if res else None}
+            else:
+                diagnostics["hf"] = {"ok": False, "why": "HF client not initialized"}
+        except Exception as e:
+            diagnostics["hf"] = {"ok": False, "error": str(e)}
+        # Context retriever
+        try:
+            ctx_preview = None
+            if patient_id and medical_agent and getattr(medical_agent, "context_retriever", None):
+                ctx_preview = await medical_agent.context_retriever.retrieve(patient_id, "diagnostics check", max_chars=800)
+            diagnostics["context"] = {
+                "has_retriever": bool(getattr(medical_agent, "context_retriever", None) is not None),
+                "preview_tokens": (ctx_preview or {}).get("approx_tokens") if ctx_preview else None,
+                "preview_excerpt": (ctx_preview or {}).get("trimmed_context_text", "")[:200] if ctx_preview else None,
+            }
+        except Exception as e:
+            diagnostics["context"] = {"error": str(e)}
+        return diagnostics
+    except Exception as e:
+        return {"error": str(e)}
 
 # To run this app directly (for development):
 # uvicorn ai_fastapi_agent.ai-services.main_agent.main:app --reload

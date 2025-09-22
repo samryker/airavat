@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:convert';
+import 'package:http/http.dart' as http;
 import '../services/digital_twin_service.dart';
+import '../services/api_service.dart';
 
 class DigitalTwinScreen extends StatefulWidget {
   const DigitalTwinScreen({super.key});
@@ -24,6 +26,8 @@ class _DigitalTwinScreenState extends State<DigitalTwinScreen> {
   String? _status;
   DigitalTwinRecord? _currentTwin;
   String? _inference;
+  String? _medicalModelResponse;
+  String? _geneticAnalysisResult;
 
   @override
   void dispose() {
@@ -164,25 +168,186 @@ class _DigitalTwinScreenState extends State<DigitalTwinScreen> {
   }
 
   Future<void> _importBiomarkersFromFile() async {
-    final result = await FilePicker.platform.pickFiles(type: FileType.any);
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['json', 'txt', 'csv', 'pdf', 'vcf', 'fasta', 'fastq'],
+      allowMultiple: false,
+    );
+
     if (result != null && result.files.single.bytes != null) {
+      setState(() {
+        _loading = true;
+        _status = 'Processing file...';
+      });
+
       try {
-        final content = utf8.decode(result.files.single.bytes!);
-        final data = jsonDecode(content);
-        final map = <String, double>{};
-        (data as Map).forEach((k, v) {
-          final numVal = (v as num?)?.toDouble();
-          if (numVal != null) map[k.toString()] = numVal;
-        });
-        setState(() => _biomarkers = map);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Imported ${map.length} biomarkers')),
-        );
+        final file = result.files.single;
+        final userId = FirebaseAuth.instance.currentUser?.uid;
+
+        if (userId == null) {
+          throw Exception('User not authenticated');
+        }
+
+        // Try to import as JSON biomarkers first
+        if (file.extension?.toLowerCase() == 'json') {
+          try {
+            final content = utf8.decode(file.bytes!);
+            final data = jsonDecode(content);
+            final map = <String, double>{};
+            (data as Map).forEach((k, v) {
+              final numVal = (v as num?)?.toDouble();
+              if (numVal != null) map[k.toString()] = numVal;
+            });
+            setState(() => _biomarkers = map);
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                  content: Text('Imported ${map.length} biomarkers from JSON')),
+            );
+          } catch (jsonError) {
+            print(
+                'Not a valid biomarker JSON, treating as genetic file: $jsonError');
+          }
+        }
+
+        // Send to genetic analysis service for medical model analysis
+        try {
+          setState(() => _status = 'Analyzing with medical model...');
+
+          // Upload to genetic analysis endpoint
+          final geneticResponse =
+              await _uploadToGeneticAnalysis(file.bytes!, file.name, userId);
+
+          setState(() {
+            _geneticAnalysisResult = geneticResponse['detailed_analysis'] ??
+                geneticResponse['message'] ??
+                'Genetic analysis completed';
+            _status = 'File processed successfully';
+          });
+
+          // Also get medical model response via file analysis
+          final medicalResponse = await ApiService.analyzeFile(
+            fileBytes: file.bytes!,
+            filename: file.name,
+            contentType: _getContentType(file.name),
+          );
+
+          setState(() {
+            _medicalModelResponse =
+                medicalResponse['analysis'] ?? 'Medical analysis completed';
+          });
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content:
+                    Text('File analyzed with both Gemini and Medical Model')),
+          );
+        } catch (analysisError) {
+          print('Genetic/Medical analysis failed: $analysisError');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Analysis failed: $analysisError')),
+          );
+        }
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Invalid JSON file: $e')),
+          SnackBar(content: Text('Error processing file: $e')),
         );
+      } finally {
+        setState(() => _loading = false);
       }
+    }
+  }
+
+  Future<Map<String, dynamic>> _uploadToGeneticAnalysis(
+      List<int> fileBytes, String filename, String userId) async {
+    try {
+      final uri = Uri.parse(
+          'https://airavat-backend-10892877764.us-central1.run.app/genetic/analyze');
+      final request = http.MultipartRequest('POST', uri);
+
+      request.files.add(http.MultipartFile.fromBytes(
+        'file',
+        fileBytes,
+        filename: filename,
+      ));
+
+      request.fields['user_id'] = userId;
+      request.fields['report_type'] = _detectReportType(filename);
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        final result = jsonDecode(response.body) as Map<String, dynamic>;
+
+        // Format the response for display
+        if (result['status'] == 'success' && result['analysis'] != null) {
+          final analysis = result['analysis'] as Map<String, dynamic>;
+          final summary = analysis['summary'] ?? 'Analysis completed';
+          final markers = analysis['genetic_markers'] as List? ?? [];
+          final genes = analysis['genes_analyzed'] as List? ?? [];
+
+          return {
+            'status': 'success',
+            'message': summary,
+            'detailed_analysis':
+                'Found ${markers.length} genetic markers and ${genes.length} genes.\n\nMarkers: ${markers.map((m) => m['gene_name']).join(', ')}\n\nGenes: ${genes.join(', ')}',
+            'file_type': result['file_type'],
+            'processed_at': result['processed_at']
+          };
+        }
+
+        return result;
+      } else {
+        throw Exception(
+            'Genetic analysis failed: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      throw Exception('Error uploading to genetic service: $e');
+    }
+  }
+
+  String _detectReportType(String filename) {
+    final extension = filename.toLowerCase().split('.').last;
+    switch (extension) {
+      case 'vcf':
+        return 'vcf_file';
+      case 'fasta':
+      case 'fa':
+        return 'fasta_file';
+      case 'fastq':
+      case 'fq':
+        return 'fastq_file';
+      case 'pdf':
+        return 'lab_report';
+      case 'json':
+        return 'genetic_test';
+      default:
+        return 'unknown';
+    }
+  }
+
+  String _getContentType(String fileName) {
+    final extension = fileName.toLowerCase().split('.').last;
+    switch (extension) {
+      case 'pdf':
+        return 'application/pdf';
+      case 'json':
+        return 'application/json';
+      case 'csv':
+        return 'text/csv';
+      case 'txt':
+        return 'text/plain';
+      case 'vcf':
+        return 'text/plain';
+      case 'fasta':
+      case 'fa':
+        return 'text/plain';
+      case 'fastq':
+      case 'fq':
+        return 'text/plain';
+      default:
+        return 'application/octet-stream';
     }
   }
 
@@ -231,7 +396,7 @@ class _DigitalTwinScreenState extends State<DigitalTwinScreen> {
                 ElevatedButton.icon(
                   onPressed: _importBiomarkersFromFile,
                   icon: const Icon(Icons.upload_file),
-                  label: const Text('Import Biomarkers (JSON)'),
+                  label: const Text('Upload File (JSON/Genetic)'),
                 ),
                 const SizedBox(width: 12),
                 ElevatedButton.icon(
@@ -267,51 +432,140 @@ class _DigitalTwinScreenState extends State<DigitalTwinScreen> {
             if (_status != null) Text(_status!),
             const SizedBox(height: 12),
             Expanded(
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Current Twin'),
-                            const SizedBox(height: 8),
-                            Expanded(
-                              child: SingleChildScrollView(
-                                child: Text(
-                                  jsonEncode({
-                                    'patient_id': _currentTwin?.patientId,
-                                    'height_cm': _currentTwin?.heightCm,
-                                    'weight_kg': _currentTwin?.weightKg,
-                                    'biomarkers': _currentTwin?.biomarkers,
-                                    'updated_at': _currentTwin?.updatedAt,
-                                  }),
-                                ),
-                              ),
-                            ),
-                          ],
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final isMobile = constraints.maxWidth < 768;
+
+                  if (isMobile) {
+                    // Mobile: Stack vertically
+                    return SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          _buildTwinDataCard(),
+                          const SizedBox(height: 12),
+                          _buildDualAIResponseCards(),
+                        ],
+                      ),
+                    );
+                  } else {
+                    // Desktop/Tablet: Three columns
+                    return Row(
+                      children: [
+                        Expanded(flex: 1, child: _buildTwinDataCard()),
+                        const SizedBox(width: 12),
+                        Expanded(flex: 2, child: _buildDualAIResponseCards()),
+                      ],
+                    );
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTwinDataCard() {
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.person_outline,
+                    color: Theme.of(context).primaryColor),
+                const SizedBox(width: 8),
+                const Text(
+                  'Current Twin',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const Divider(),
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_currentTwin != null) ...[
+                      _buildInfoRow('Patient ID', _currentTwin!.patientId),
+                      _buildInfoRow('Height', '${_currentTwin!.heightCm} cm'),
+                      _buildInfoRow('Weight', '${_currentTwin!.weightKg} kg'),
+                      _buildInfoRow('BMI',
+                          '${(_currentTwin!.weightKg / ((_currentTwin!.heightCm / 100) * (_currentTwin!.heightCm / 100))).toStringAsFixed(1)}'),
+                      if (_currentTwin!.biomarkers != null &&
+                          _currentTwin!.biomarkers!.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        const Text('Biomarkers:',
+                            style: TextStyle(fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 8),
+                        ..._currentTwin!.biomarkers!.entries
+                            .map((e) => _buildInfoRow(e.key, '${e.value}')),
+                      ],
+                      if (_currentTwin!.updatedAt != null) ...[
+                        const SizedBox(height: 12),
+                        _buildInfoRow('Updated', _currentTwin!.updatedAt!),
+                      ],
+                    ] else ...[
+                      const Center(
+                        child: Text(
+                          'No twin data yet\nSave or fetch twin to see data',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey),
                         ),
                       ),
-                    ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDualAIResponseCards() {
+    return Column(
+      children: [
+        // Gemini AI Response
+        Expanded(
+          child: Card(
+            elevation: 4,
+            color: Colors.blue.shade50,
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.psychology, color: Colors.blue.shade700),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Gemini AI Analysis',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue.shade700,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 12),
+                  const Divider(),
                   Expanded(
-                    child: Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('AI Inference'),
-                            const SizedBox(height: 8),
-                            Expanded(
-                              child: SingleChildScrollView(
-                                child: Text(_inference ?? 'No inference yet'),
-                              ),
-                            ),
-                          ],
+                    child: SingleChildScrollView(
+                      child: Text(
+                        _inference ??
+                            'No Gemini analysis yet\nProcess treatment to get AI insights',
+                        style: TextStyle(
+                          color:
+                              _inference != null ? Colors.black87 : Colors.grey,
+                          height: 1.4,
                         ),
                       ),
                     ),
@@ -319,8 +573,104 @@ class _DigitalTwinScreenState extends State<DigitalTwinScreen> {
                 ],
               ),
             ),
-          ],
+          ),
         ),
+        const SizedBox(height: 12),
+        // Medical Model Response
+        Expanded(
+          child: Card(
+            elevation: 4,
+            color: Colors.green.shade50,
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.biotech, color: Colors.green.shade700),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Medical Model Analysis',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Divider(),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (_medicalModelResponse != null) ...[
+                            const Text(
+                              'File Analysis:',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _medicalModelResponse!,
+                              style: const TextStyle(
+                                  color: Colors.black87, height: 1.4),
+                            ),
+                          ],
+                          if (_geneticAnalysisResult != null) ...[
+                            const SizedBox(height: 16),
+                            const Text(
+                              'Genetic Analysis:',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _geneticAnalysisResult!,
+                              style: const TextStyle(
+                                  color: Colors.black87, height: 1.4),
+                            ),
+                          ],
+                          if (_medicalModelResponse == null &&
+                              _geneticAnalysisResult == null) ...[
+                            const Text(
+                              'No medical model analysis yet\nUpload files to get specialized medical insights',
+                              style: TextStyle(color: Colors.grey, height: 1.4),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(
+              '$label:',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(color: Colors.black87),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -20,7 +20,7 @@ class FirestoreService:
 
         try:
             doc_ref = self.db.collection('patients').document(patient_id)
-            doc = await doc_ref.get()
+            doc = doc_ref.get()
             
             if doc.exists:
                 data = doc.to_dict()
@@ -72,7 +72,7 @@ class FirestoreService:
             query = self.db.collection('biomarkers').document(patient_id).collection('reports').order_by('timestamp', direction=firestore.Query.DESCENDING).limit(1)
             docs_stream = query.stream()
             
-            async for doc in docs_stream:
+            for doc in docs_stream:
                 data = doc.to_dict()
                 if 'timestamp' in data and data['timestamp']:
                     data['timestamp'] = data['timestamp'].isoformat()
@@ -95,7 +95,7 @@ class FirestoreService:
             docs_stream = query.stream()
             
             conversations = []
-            async for doc in docs_stream:
+            for doc in docs_stream:
                 data = doc.to_dict()
                 if 'timestamp' in data and data['timestamp']:
                     data['timestamp'] = data['timestamp'].isoformat()
@@ -115,7 +115,7 @@ class FirestoreService:
 
         try:
             doc_ref = self.db.collection('patient_context').document(patient_id)
-            await doc_ref.set({
+            doc_ref.set({
                 'context_data': context_data,
                 'updated_at': datetime.datetime.utcnow(),
                 'patient_id': patient_id
@@ -187,7 +187,7 @@ class FirestoreService:
             # Using patient_id as document ID in 'customer_plans'
             # and then a subcollection 'plans' for multiple plan entries.
             plan_ref = self.db.collection('customer_plans').document(patient_id).collection('plans').document()
-            await plan_ref.set(plan_data_to_store)
+            plan_ref.set(plan_data_to_store)
             print(f"Plan stored for patient {patient_id} with ID: {plan_ref.id}")
             return plan_ref.id
         except Exception as e:
@@ -212,10 +212,9 @@ class FirestoreService:
         try:
             # Query the 'plans' subcollection for the given patient_id
             query = self.db.collection('customer_plans').document(patient_id).collection('plans').order_by('timestamp', direction=firestore.Query.DESCENDING).limit(limit)
-            docs_stream = query.stream() # Use stream() for async iteration
+            docs_stream = query.stream()
 
-            # Asynchronously iterate over documents
-            async for doc in docs_stream:
+            for doc in docs_stream:
                 plan_data = doc.to_dict()
                 plan_data["plan_id"] = doc.id # Add the document ID to the data
                 plans.append(plan_data)

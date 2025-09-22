@@ -12,11 +12,11 @@ import logging
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# Load environment variables (try current working dir and module dir)
-load_dotenv(override=True)
+# Load environment variables (respect existing env set by deployment)
+load_dotenv()  # do not override real env injected by platform
 try:
     _module_env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
-    load_dotenv(_module_env_path, override=True)
+    load_dotenv(_module_env_path)  # local dev convenience only
 except Exception:
     pass
 
