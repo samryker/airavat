@@ -148,12 +148,35 @@ class RealGeminiLLM:
             else:
                 prompt = str(prompt_or_messages)
             
-            # Call Gemini API (compat with sync SDK versions)
-            if hasattr(gemini_model, "generate_content_async"):
-                response = await gemini_model.generate_content_async(prompt)
-            else:
-                response = await asyncio.to_thread(gemini_model.generate_content, prompt)
-            return AIMessage(response.text)
+            # Call Gemini API with retry logic
+            max_retries = 3
+            base_delay = 1.0
+            
+            for attempt in range(max_retries):
+                try:
+                    # Call Gemini API (compat with sync SDK versions)
+                    if hasattr(gemini_model, "generate_content_async"):
+                        response = await gemini_model.generate_content_async(prompt)
+                    else:
+                        response = await asyncio.to_thread(gemini_model.generate_content, prompt)
+                    
+                    if response and hasattr(response, 'text') and response.text:
+                        return AIMessage(response.text)
+                    else:
+                        raise Exception("Empty response from Gemini API")
+                        
+                except Exception as api_error:
+                    print(f"Gemini API attempt {attempt + 1} failed: {api_error}")
+                    
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt)
+                        print(f"Retrying in {delay} seconds...")
+                        await asyncio.sleep(delay)
+                    else:
+                        raise api_error
+            
+            # This shouldn't be reached, but just in case
+            return AIMessage("I'm having trouble processing your request right now. Please try again or contact your healthcare provider for immediate concerns.")
             
         except Exception as e:
             print(f"Error calling Gemini API: {e}")

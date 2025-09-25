@@ -25,12 +25,32 @@ _API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
 if _API_KEY:
     try:
+        # Configure with explicit API key and ensure we're using the correct model
         genai.configure(api_key=_API_KEY)
-        model = genai.GenerativeModel("gemini-1.5-pro")
-        logger.info("Gemini service initialized successfully")
+        
+        # Use the stable model name for Generative AI API (not Vertex AI)
+        model = genai.GenerativeModel("gemini-1.5-pro-latest")
+        
+        # Test the model with a simple query to verify it works
+        test_response = model.generate_content("Hello")
+        if test_response and test_response.text:
+            logger.info(f"Gemini service initialized successfully with model: gemini-1.5-pro-latest")
+        else:
+            raise Exception("Model test failed - no response")
+            
     except Exception as _e:
         logger.exception(f"Failed to initialize Gemini service: {_e}")
-        model = None
+        try:
+            # Fallback to basic model name
+            model = genai.GenerativeModel("gemini-pro")
+            test_response = model.generate_content("Hello")
+            if test_response and test_response.text:
+                logger.info("Gemini service initialized with fallback model: gemini-pro")
+            else:
+                raise Exception("Fallback model test failed")
+        except Exception as fallback_error:
+            logger.exception(f"Fallback model also failed: {fallback_error}")
+            model = None
 else:
     model = None
     logger.warning("Gemini/Google API key not found - service will use fallback responses")
@@ -172,12 +192,36 @@ Remember to:
 
 Respond in a conversational, caring tone."""
 
-        # Compatibility: use async method if available, otherwise offload sync call
-        if hasattr(model, "generate_content_async"):
-            response = await model.generate_content_async(prompt)
+        # Retry logic for API calls with exponential backoff
+        max_retries = 3
+        base_delay = 1.0
+        
+        for attempt in range(max_retries):
+            try:
+                # Compatibility: use async method if available, otherwise offload sync call
+                if hasattr(model, "generate_content_async"):
+                    response = await model.generate_content_async(prompt)
+                else:
+                    response = await asyncio.to_thread(model.generate_content, prompt)
+                
+                if response and hasattr(response, 'text') and response.text:
+                    response_text = response.text
+                    logger.info(f"Gemini API call successful on attempt {attempt + 1}")
+                    break
+                else:
+                    raise Exception("Empty response from Gemini API")
+                    
+            except Exception as api_error:
+                logger.warning(f"Gemini API attempt {attempt + 1} failed: {api_error}")
+                
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)  # Exponential backoff
+                    logger.info(f"Retrying in {delay} seconds...")
+                    await asyncio.sleep(delay)
+                else:
+                    raise api_error
         else:
-            response = await asyncio.to_thread(model.generate_content, prompt)
-        response_text = response.text if response else "I apologize, but I'm having trouble processing your request right now. Please try again or consult with a healthcare professional."
+            response_text = "I apologize, but I'm having trouble processing your request right now. Please try again or consult with a healthcare professional."
         
         # Extract keywords from the response and query
         keywords = patient_query.symptoms if patient_query.symptoms else []
