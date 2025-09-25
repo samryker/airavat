@@ -44,13 +44,13 @@ jobs:
 
       - name: Prepare Gemini API key
         run: |
-          RAW_KEY='${{ secrets.GEMINI }}'
+          RAW_KEY='${{ secrets.GEMINI_API_KEY }}'
           # Strip common prefixes if user pasted KEY=value
           CLEAN_KEY="${RAW_KEY#GEMINI_API_KEY=}"
           CLEAN_KEY="${CLEAN_KEY#GEMINI=}"
           CLEAN_KEY="${CLEAN_KEY#API_KEY=}"
           if [ -z "$CLEAN_KEY" ]; then
-            echo "Gemini key is empty; check the GEMINI secret" >&2
+            echo "Gemini key is empty; check the GEMINI_API_KEY secret" >&2
             exit 1
           fi
           echo "GEMINI_API_KEY=$CLEAN_KEY" >> $GITHUB_ENV
