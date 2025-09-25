@@ -25,12 +25,19 @@ _API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
 if _API_KEY:
     try:
-        # Configure with explicit API key
+        # Force use of Generative AI API (not Vertex AI)
+        # Clear any environment variables that might force Vertex AI
+        vertex_ai_vars = ['GOOGLE_CLOUD_PROJECT', 'GOOGLE_CLOUD_REGION', 'GCLOUD_PROJECT']
+        for var in vertex_ai_vars:
+            if var in os.environ:
+                logger.info(f"Removing {var} environment variable to avoid Vertex AI routing")
+                del os.environ[var]
+        
+        # Configure with explicit API key for Generative AI API
         genai.configure(api_key=_API_KEY)
         
-        # Use the correct model name for Generative AI API (not Vertex AI)
-        # Try different model names that are known to work
-        model_names = ["gemini-1.5-flash", "gemini-1.5-pro", "models/gemini-1.5-flash"]
+        # Use simple model names that work with Generative AI API
+        model_names = ["gemini-1.5-flash", "gemini-pro", "gemini-1.5-pro"]
         model = None
         
         for model_name in model_names:
