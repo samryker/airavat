@@ -25,32 +25,17 @@ _API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
 if _API_KEY:
     try:
-        # Configure with explicit API key and ensure we're using the correct model
+        # Configure with explicit API key
         genai.configure(api_key=_API_KEY)
         
-        # Use the stable model name for Generative AI API (not Vertex AI)
-        model = genai.GenerativeModel("gemini-1.5-pro-latest")
-        
-        # Test the model with a simple query to verify it works
-        test_response = model.generate_content("Hello")
-        if test_response and test_response.text:
-            logger.info(f"Gemini service initialized successfully with model: gemini-1.5-pro-latest")
-        else:
-            raise Exception("Model test failed - no response")
+        # Use the most stable model name for Generative AI API
+        # Don't test during initialization to avoid startup failures
+        model = genai.GenerativeModel("gemini-pro")
+        logger.info("Gemini service initialized with model: gemini-pro")
             
     except Exception as _e:
         logger.exception(f"Failed to initialize Gemini service: {_e}")
-        try:
-            # Fallback to basic model name
-            model = genai.GenerativeModel("gemini-pro")
-            test_response = model.generate_content("Hello")
-            if test_response and test_response.text:
-                logger.info("Gemini service initialized with fallback model: gemini-pro")
-            else:
-                raise Exception("Fallback model test failed")
-        except Exception as fallback_error:
-            logger.exception(f"Fallback model also failed: {fallback_error}")
-            model = None
+        model = None
 else:
     model = None
     logger.warning("Gemini/Google API key not found - service will use fallback responses")
@@ -58,6 +43,26 @@ else:
 def is_gemini_available() -> bool:
     """Check if Gemini API is available and configured."""
     return model is not None
+
+async def test_gemini_connection() -> Dict[str, Any]:
+    """Test Gemini API connection at runtime (not during initialization)"""
+    if not model:
+        return {"available": False, "error": "Model not initialized"}
+    
+    try:
+        # Test with a simple query
+        if hasattr(model, "generate_content_async"):
+            response = await model.generate_content_async("Hello")
+        else:
+            response = await asyncio.to_thread(model.generate_content, "Hello")
+        
+        if response and hasattr(response, 'text') and response.text:
+            return {"available": True, "test_response": response.text[:100]}
+        else:
+            return {"available": False, "error": "Empty response from API"}
+            
+    except Exception as e:
+        return {"available": False, "error": str(e)}
 
 def format_firestore_timestamp(timestamp_obj) -> str:
     """Safely formats a Firestore Timestamp (or datetime object) to a string."""

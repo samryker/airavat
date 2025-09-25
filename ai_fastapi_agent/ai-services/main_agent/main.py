@@ -1190,6 +1190,12 @@ async def debug_hf_test():
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
+@app.get("/debug/gemini_test")
+async def debug_gemini_test():
+    """Debug endpoint: test Gemini API connection at runtime"""
+    from .gemini_service import test_gemini_connection
+    return await test_gemini_connection()
+
 # Consolidated deep-diagnostic endpoint for Gemini, HF, and ContextRetriever
 @app.get("/debug/full_diagnostics")
 async def full_diagnostics(patient_id: str | None = None, sample_text: str | None = "BRCA1 variant and TP53 mutation"):
