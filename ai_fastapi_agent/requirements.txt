@@ -2,6 +2,7 @@ fastapi>=0.100.0
 uvicorn[standard]>=0.23.0
 gunicorn>=21.2.0
 flask
+aiohttp>=3.8.0
 firebase-admin
 pandas
 numpy
