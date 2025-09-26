@@ -14,6 +14,7 @@ from typing import Dict, Any, List
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 from google import generativeai as genai
+import uuid
 from .gemini_service import is_gemini_available as _gemini_available, model as _gemini_model
 
 # Optional imports for new services
@@ -318,13 +319,21 @@ if USER_DATA_AVAILABLE and db:
 @app.post("/agent/query", response_model=AgentResponse)
 async def query_agent(patient_query: PatientQuery):
     """
-    Receives a patient query, processes it through the Medical Agent,
+    Receives a patient query, processes it through the Simple Medical Agent,
     and returns the agent's response including any treatment suggestions.
     """
     logger.info(f"Received query for patient: {patient_query.patient_id}")
     try:
-        # The agent instance now has access to db if initialized
-        response = await medical_agent.process_query(patient_query)
+        # Use the simplified agent for reliable Gemini responses
+        from .agent_core_simple import simple_medical_agent
+        
+        # Initialize with database if available
+        if db and not simple_medical_agent.db:
+            simple_medical_agent.db = db
+            simple_medical_agent.firestore_service = FirestoreService(db)
+            simple_medical_agent.user_data_service = UserDataService(db)
+        
+        response = await simple_medical_agent.process_query(patient_query)
         return response
     except Exception as e:
         # Log the exception for debugging
@@ -1195,8 +1204,36 @@ async def debug_hf_test():
 @app.get("/debug/gemini_test")
 async def debug_gemini_test():
     """Debug endpoint: test Gemini API connection at runtime"""
-    from .gemini_service import test_gemini_connection
-    return await test_gemini_connection()
+    from .gemini_service_simple import simple_gemini_service
+    return await simple_gemini_service.test_connection()
+
+@app.get("/debug/simple_agent_test")
+async def debug_simple_agent_test():
+    """Debug endpoint: test the simplified agent"""
+    from .agent_core_simple import simple_medical_agent
+    from .data_models import PatientQuery
+    
+    # Create test query
+    test_query = PatientQuery(
+        patient_id="test_user_123",
+        query_text="I have a headache and feel tired. What could be causing this?",
+        symptoms=["headache", "fatigue"],
+        request_id="debug_test_" + str(uuid.uuid4())[:8]
+    )
+    
+    try:
+        response = await simple_medical_agent.process_query(test_query)
+        return {
+            "test_status": "success",
+            "gemini_working": "I'm currently unable" not in response.response_text,
+            "response_preview": response.response_text[:200] + "...",
+            "suggestions_count": len(response.suggestions) if response.suggestions else 0
+        }
+    except Exception as e:
+        return {
+            "test_status": "error",
+            "error": str(e)
+        }
 
 # Consolidated deep-diagnostic endpoint for Gemini, HF, and ContextRetriever
 @app.get("/debug/full_diagnostics")
