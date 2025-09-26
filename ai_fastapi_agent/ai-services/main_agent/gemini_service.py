@@ -26,19 +26,27 @@ _API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 if _API_KEY:
     try:
         # Force use of Generative AI API (not Vertex AI)
-        # Clear any environment variables that might force Vertex AI
-        vertex_ai_vars = ['GOOGLE_CLOUD_PROJECT', 'GOOGLE_CLOUD_REGION', 'GCLOUD_PROJECT']
+        # Clear ALL Google Cloud environment variables that might force Vertex AI routing
+        vertex_ai_vars = [
+            'GOOGLE_CLOUD_PROJECT', 'GOOGLE_CLOUD_REGION', 'GCLOUD_PROJECT',
+            'GOOGLE_APPLICATION_CREDENTIALS', 'GOOGLE_CLOUD_QUOTA_PROJECT',
+            'GOOGLE_CLOUD_UNIVERSE_DOMAIN', 'CLOUDSDK_CORE_PROJECT'
+        ]
         for var in vertex_ai_vars:
             if var in os.environ:
-                logger.info(f"Removing {var} environment variable to avoid Vertex AI routing")
+                logger.info(f"Removing {var} environment variable to force Generative AI API")
                 del os.environ[var]
         
-        # Configure with explicit API key for Generative AI API
-        genai.configure(api_key=_API_KEY)
+        # Configure with explicit API key for Generative AI API ONLY
+        # Force the use of generativelanguage.googleapis.com (not Vertex AI)
+        genai.configure(
+            api_key=_API_KEY,
+            transport='rest'  # Force REST transport to avoid gRPC routing issues
+        )
         
-        # Use ONLY Gemini 1.5 Pro - single model configuration
+        # Use ONLY Gemini 1.5 Pro with explicit model name (avoid version suffixes)
         model = genai.GenerativeModel("gemini-1.5-pro")
-        logger.info("Successfully initialized Gemini 1.5 Pro model")
+        logger.info("Successfully initialized Gemini 1.5 Pro model for Generative AI API")
             
     except Exception as _e:
         logger.exception(f"Failed to initialize Gemini service: {_e}")
