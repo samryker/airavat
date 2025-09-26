@@ -36,21 +36,9 @@ if _API_KEY:
         # Configure with explicit API key for Generative AI API
         genai.configure(api_key=_API_KEY)
         
-        # Use simple model names that work with Generative AI API
-        model_names = ["gemini-1.5-flash", "gemini-pro", "gemini-1.5-pro"]
-        model = None
-        
-        for model_name in model_names:
-            try:
-                model = genai.GenerativeModel(model_name)
-                logger.info(f"Successfully initialized Gemini model: {model_name}")
-                break
-            except Exception as model_error:
-                logger.warning(f"Failed to initialize model {model_name}: {model_error}")
-                continue
-        
-        if not model:
-            raise Exception("All model names failed during initialization")
+        # Use ONLY Gemini 1.5 Pro - single model configuration
+        model = genai.GenerativeModel("gemini-1.5-pro")
+        logger.info("Successfully initialized Gemini 1.5 Pro model")
             
     except Exception as _e:
         logger.exception(f"Failed to initialize Gemini service: {_e}")

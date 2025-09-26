@@ -1104,8 +1104,10 @@ async def analyze_file(file: UploadFile = File(...)):
                 display_name=file.filename or "upload"
             )
 
-            # Use the configured model from gemini_service
-            model = _gemini_model or genai.GenerativeModel("gemini-1.5-pro")
+            # Use the configured model from gemini_service ONLY
+            model = _gemini_model
+            if not model:
+                raise Exception("Gemini model not available from gemini_service")
             prompt = (
                 "You are a medical assistant. Read the uploaded file and provide: "
                 "1) A concise medical summary (<= 8 bullet points). "

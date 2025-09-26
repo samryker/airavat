@@ -201,9 +201,9 @@ class MCPMedicalAgent:
             self.memory_saver = MemorySaver()
             self.agent_graph = self._create_agent_graph()
         
-        # Use real Gemini LLM instead of hardcoded fallback
+        # Use real Gemini LLM - model reference removed (uses shared gemini_model)
         self.llm = RealGeminiLLM(
-            model="gemini-1.5-pro",
+            model=None,  # Uses shared gemini_model from gemini_service
             temperature=0.1,
             max_tokens=2048,
             convert_system_message_to_human=True

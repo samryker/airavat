@@ -8,7 +8,7 @@ from firebase_admin import firestore
 try:  # LLM integration
     from main_agent.mcp_medical_agent import RealGeminiLLM, AIMessage
     _llm = RealGeminiLLM(
-        model="gemini-1.5-pro",
+        model=None,  # Uses shared gemini_model from gemini_service
         temperature=0.1,
         max_tokens=512,
         convert_system_message_to_human=True,
