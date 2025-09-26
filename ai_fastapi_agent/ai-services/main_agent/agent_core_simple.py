@@ -9,7 +9,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 
 from .data_models import PatientQuery, AgentResponse, TreatmentSuggestion
-from .gemini_service_simple import simple_gemini_service
+from .gemini_http_service import direct_gemini_service
 from .firestore_service import FirestoreService
 from .user_data_service import UserDataService
 from .genetic_analysis_service import genetic_analysis_service
@@ -42,8 +42,8 @@ class SimpleMedicalAgent:
             # Step 1: Get patient context
             patient_context = await self._get_patient_context(patient_query)
             
-            # Step 2: Get Gemini response
-            gemini_response = await simple_gemini_service.get_medical_response(
+            # Step 2: Get Gemini response using direct HTTP API
+            gemini_response = await direct_gemini_service.get_medical_response(
                 patient_query, patient_context
             )
             

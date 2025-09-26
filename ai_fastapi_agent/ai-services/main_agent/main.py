@@ -1203,9 +1203,9 @@ async def debug_hf_test():
 
 @app.get("/debug/gemini_test")
 async def debug_gemini_test():
-    """Debug endpoint: test Gemini API connection at runtime"""
-    from .gemini_service_simple import simple_gemini_service
-    return await simple_gemini_service.test_connection()
+    """Debug endpoint: test direct HTTP Gemini API connection"""
+    from .gemini_http_service import direct_gemini_service
+    return await direct_gemini_service.test_connection()
 
 @app.get("/debug/simple_agent_test")
 async def debug_simple_agent_test():
