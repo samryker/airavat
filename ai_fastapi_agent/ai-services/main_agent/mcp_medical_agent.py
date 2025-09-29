@@ -747,6 +747,22 @@ Response:"""
                 'error': str(e)
             }
 
+    async def get_memory(self, patient_id: str) -> Dict[str, Any]:
+        """Compatibility wrapper used by main.py to fetch memory.
+
+        Proxies to get_patient_memory to maintain backward/forward compatibility
+        with existing endpoint code that calls `mcp_agent.get_memory(...)`.
+        """
+        try:
+            result = await self.get_patient_memory(patient_id)
+            # Normalize to return memory data only when structure matches
+            if isinstance(result, dict) and 'memory' in result:
+                return result.get('memory') or {}
+            return result or {}
+        except Exception as e:
+            print(f"Error in get_memory wrapper: {e}")
+            return {}
+
     async def get_patient_context(self, patient_id: str) -> Dict[str, Any]:
         """
         Get patient's complete context for LLM integration

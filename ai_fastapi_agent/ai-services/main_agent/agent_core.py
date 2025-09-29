@@ -14,7 +14,6 @@ import logging
 import asyncio
 import datetime
 import os
-import google.generativeai as genai
 from dotenv import load_dotenv
 from .user_data_service import UserDataService
 from .notification_service import NotificationService
@@ -166,7 +165,7 @@ class MedicalAgent:
             # Get comprehensive patient context
             patient_context = await self._get_comprehensive_context(patient_query)
             
-            # Route ALL queries through Gemini for full LLM response
+            # Route ALL queries through Gemini for full LLM response (single path)
             gemini_response = await self._get_gemini_response(patient_query, patient_context)
             
             # Handle specific intents after getting Gemini response
@@ -295,40 +294,35 @@ class MedicalAgent:
         Get comprehensive response from Gemini for ALL types of queries
         """
         try:
-            # Create a comprehensive prompt that includes all context
-            prompt = self._create_comprehensive_prompt(patient_query, patient_context)
-            
-            # Get response from Gemini
+            # Single path: call shared gemini_service directly
             gemini_output = await get_treatment_suggestion_from_gemini(patient_query, patient_context)
-            
-            # Extract suggestions from Gemini response dynamically
+
             suggestions = []
             if gemini_output and hasattr(gemini_output, 'text'):
-                # Let Gemini generate suggestions based on the actual response content
-                suggestions = await self._generate_dynamic_suggestions(gemini_output.text, patient_query.query_text, patient_context)
-            
+                suggestions = await self._generate_dynamic_suggestions(
+                    gemini_output.text, patient_query.query_text, patient_context
+                )
+
             return AgentResponse(
                 request_id=patient_query.request_id,
-                response_text=gemini_output.text if gemini_output else "I'm processing your request. Please try again.",
-                suggestions=suggestions
+                response_text=(gemini_output.text if gemini_output else "I'm processing your request. Please try again."),
+                suggestions=suggestions,
             )
-            
+
         except Exception as e:
             logger.error(f"Error getting Gemini response: {e}")
-            # Return a response that encourages the user to try again
             return AgentResponse(
                 request_id=patient_query.request_id,
-                response_text="I'm having trouble processing your request right now. Please try again or rephrase your question.",
+                response_text=(
+                    "I'm having trouble processing your request right now. Please try again or rephrase your question."
+                ),
                 suggestions=[
-                    TreatmentSuggestion(
-                        suggestion_text="Try rephrasing your question",
-                        confidence_score=0.8
-                    ),
+                    TreatmentSuggestion(suggestion_text="Try rephrasing your question", confidence_score=0.8),
                     TreatmentSuggestion(
                         suggestion_text="Contact your healthcare provider for immediate concerns",
-                        confidence_score=0.9
-                    )
-                ]
+                        confidence_score=0.9,
+                    ),
+                ],
             )
 
     async def _generate_dynamic_suggestions(self, response_text: str, original_query: str, patient_context: Dict[str, Any]) -> List[TreatmentSuggestion]:

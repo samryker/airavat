@@ -25,29 +25,27 @@ _API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
 if _API_KEY:
     try:
-        # Force use of Generative AI API (not Vertex AI)
-        # Clear ALL Google Cloud environment variables that might force Vertex AI routing
-        vertex_ai_vars = [
-            'GOOGLE_CLOUD_PROJECT', 'GOOGLE_CLOUD_REGION', 'GCLOUD_PROJECT',
-            'GOOGLE_APPLICATION_CREDENTIALS', 'GOOGLE_CLOUD_QUOTA_PROJECT',
-            'GOOGLE_CLOUD_UNIVERSE_DOMAIN', 'CLOUDSDK_CORE_PROJECT'
-        ]
-        for var in vertex_ai_vars:
-            if var in os.environ:
-                logger.info(f"Removing {var} environment variable to force Generative AI API")
-                del os.environ[var]
-        
-        # Configure with explicit API key for Generative AI API ONLY
-        # Force the use of generativelanguage.googleapis.com (not Vertex AI)
+        # Configure Generative AI SDK with API key; avoid altering other Google Cloud envs
         genai.configure(
             api_key=_API_KEY,
-            transport='rest'  # Force REST transport to avoid gRPC routing issues
+            transport='rest'  # Use REST transport
         )
-        
-        # Use ONLY Gemini 1.5 Pro with explicit model name (avoid version suffixes)
-        model = genai.GenerativeModel("gemini-1.5-pro")
-        logger.info("Successfully initialized Gemini 1.5 Pro model for Generative AI API")
-            
+
+        # Single-model policy: Gemini 1.5 Pro, with Pro-only fallback
+        _model_names = ["gemini-1.5-pro", "gemini-1.5-pro-latest"]
+        _initialized = False
+        for _name in _model_names:
+            try:
+                model = genai.GenerativeModel(_name)
+                logger.info(f"Successfully initialized Gemini model: {_name}")
+                _initialized = True
+                break
+            except Exception as _me:
+                logger.warning(f"Model init failed for {_name}: {_me}")
+                continue
+        if not _initialized:
+            raise RuntimeError("Failed to initialize Gemini 1.5 Pro model")
+
     except Exception as _e:
         logger.exception(f"Failed to initialize Gemini service: {_e}")
         model = None
