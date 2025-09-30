@@ -39,5 +39,7 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health || exit 1
 
-# Command to run the application - use PORT env variable for Cloud Run
-CMD exec gunicorn -c ai-services/gunicorn.conf.py ai-services.main_agent.main:app --bind 0.0.0.0:${PORT}
+# Command to run ONLY the new Gemini FastAPI server
+# - chdir into ai-services so module path is simple (no hyphen package name)
+# - bind to Cloud Run PORT
+CMD exec gunicorn -c ai-services/gunicorn.conf.py gemini_api_server:app --chdir ai-services --bind 0.0.0.0:${PORT}
