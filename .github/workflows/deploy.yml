@@ -77,7 +77,7 @@ jobs:
             --timeout=300 \
             --port=8080 \
             --cpu-boost \
-            --set-env-vars=GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }},HF_TOKEN=${{ secrets.HF_TOKEN }},ENVIRONMENT=production,PORT=8080
+            --set-env-vars=GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }},HF_TOKEN=${{ secrets.HF_TOKEN }},ENVIRONMENT=production
 
       - name: Route 100% traffic to latest revision
         run: |
