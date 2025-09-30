@@ -561,12 +561,19 @@ def main():
     logger.info(f"Gemini service initialized: {gemini_service.initialized}")
     logger.info(f"Hugging Face service initialized: {hf_service.initialized}")
     
+    # Cloud Run configuration
     host = os.getenv("HOST", "0.0.0.0")
-    port = int(os.getenv("PORT", "8000"))
+    port = int(os.getenv("PORT", "8080"))  # Cloud Run uses port 8080
     reload = os.getenv("RELOAD", "false").lower() == "true"
     
     logger.info(f"Starting server on {host}:{port}")
     logger.info(f"Reload mode: {reload}")
+    logger.info(f"Environment: {os.getenv('ENVIRONMENT', 'production')}")
+    
+    # For Cloud Run, disable reload in production
+    if os.getenv("ENVIRONMENT") == "production":
+        reload = False
+        logger.info("Production mode: reload disabled")
     
     uvicorn.run(
         "gemini_api_server:app",

@@ -7,17 +7,18 @@ current_dir = Path(__file__).parent
 sys.path.insert(0, str(current_dir))
 
 # Gunicorn configuration
-# Use PORT environment variable (Cloud Run provides this) or default to 8000
-port = int(os.environ.get("PORT", 8000))
+# Use PORT environment variable (Cloud Run provides this) or default to 8080
+port = int(os.environ.get("PORT", 8080))
 bind = f"0.0.0.0:{port}"
 workers = 1  # Reduced for Cloud Run
 worker_class = "uvicorn.workers.UvicornWorker"
 worker_connections = 1000
-timeout = 300
-keepalive = 2
+timeout = 300  # Increased timeout for Cloud Run
+keepalive = 5  # Increased keepalive for stability
 max_requests = 1000
 max_requests_jitter = 50
 preload_app = True
+graceful_timeout = 120  # Graceful shutdown timeout
 
 # Set environment variables for workers
 raw_env = [
