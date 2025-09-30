@@ -36,5 +36,5 @@ USER app
 # Expose the port
 EXPOSE 8080
 
-# Command to run the application
-CMD ["uvicorn", "--app-dir", "ai-services", "main_agent.main:app", "--host", "0.0.0.0", "--port", "8080"] 
+# Run ONLY the Gemini API server
+CMD exec gunicorn -c ai-services/gunicorn.conf.py gemini_api_server:app --chdir ai-services --bind 0.0.0.0:${PORT}
