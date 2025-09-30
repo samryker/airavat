@@ -52,6 +52,40 @@ except ImportError:
     OptimizedContextRetriever = None
     CONTEXT_RETRIEVER_AVAILABLE = False
 
+# Optional Firebase Admin (for Digital Twin persistence)
+FIREBASE_AVAILABLE = False
+db = None
+try:
+    import firebase_admin  # type: ignore
+    from firebase_admin import credentials, firestore  # type: ignore
+
+    if not firebase_admin._apps:
+        try:
+            # Prefer ADC in Cloud Run
+            cred = credentials.ApplicationDefault()
+            firebase_admin.initialize_app(cred)
+            logger.info("Firebase initialized with Application Default Credentials")
+        except Exception as _adc_err:
+            # Fallback to JSON in env variable
+            try:
+                key_json = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
+                if key_json:
+                    import json as _json
+                    cred = credentials.Certificate(_json.loads(key_json))
+                    firebase_admin.initialize_app(cred)
+                    logger.info("Firebase initialized from FIREBASE_SERVICE_ACCOUNT_JSON")
+            except Exception as _json_err:  # pragma: no cover
+                logger.warning(f"Firebase init fallback failed: {_json_err}")
+
+    try:
+        db = firestore.client()  # type: ignore
+        FIREBASE_AVAILABLE = True
+    except Exception as _db_err:  # pragma: no cover
+        logger.warning(f"Firestore client unavailable: {_db_err}")
+        db = None
+except Exception as _fb_err:  # pragma: no cover
+    logger.info(f"Firebase Admin not available: {_fb_err}")
+
 # =============================================================================
 # DATA MODELS
 # =============================================================================
@@ -80,6 +114,19 @@ class AgentResponse(BaseModel):
     request_id: str
     response_text: str
     suggestions: Optional[List[Dict[str, Any]]] = []
+
+# =============================================================================
+# DIGITAL TWIN MODELS
+# =============================================================================
+
+class DigitalTwinPayload(BaseModel):
+    height_cm: float
+    weight_kg: float
+    biomarkers: Optional[Dict[str, float]] = None
+
+class DigitalTwinRecord(DigitalTwinPayload):
+    patient_id: str
+    updated_at: str
 
 # =============================================================================
 # GEMINI SERVICE
@@ -351,8 +398,16 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=[
+        "https://mira-d303d.web.app",
+        "https://mira-d303d.firebaseapp.com",
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+        "*"
+    ],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -360,6 +415,12 @@ app.add_middleware(
 # =============================================================================
 # ENDPOINTS
 # =============================================================================
+
+try:
+    from smpl_service.router import router as smpl_router
+    app.include_router(smpl_router)
+except Exception:
+    logger.warning("SMPL router unavailable; /smpl endpoints will return 404")
 
 @app.get("/health")
 async def health_check():
@@ -394,6 +455,75 @@ async def debug_config():
         }
     }
 
+# =============================================================================
+# DIGITAL TWIN MINIMAL ENDPOINTS
+# =============================================================================
+
+@app.put("/digital_twin/{patient_id}")
+async def upsert_digital_twin(patient_id: str, payload: DigitalTwinPayload):
+    """Upsert the latest twin document for a patient. Uses Firestore if available."""
+    try:
+        record = DigitalTwinRecord(
+            patient_id=patient_id,
+            height_cm=payload.height_cm,
+            weight_kg=payload.weight_kg,
+            biomarkers=payload.biomarkers or {},
+            updated_at=datetime.utcnow().isoformat() + "Z",
+        )
+
+        if FIREBASE_AVAILABLE and db is not None:
+            try:
+                db.collection("twin_customizations").document(patient_id).set({
+                    "userId": patient_id,
+                    "height_cm": record.height_cm,
+                    "weight_kg": record.weight_kg,
+                    "biomarkers": record.biomarkers or {},
+                    "lastUpdated": datetime.utcnow(),
+                }, merge=True)
+            except Exception as e:  # pragma: no cover
+                logger.warning(f"Firestore upsert failed: {e}")
+
+        return {"status": "success", "twin": record.model_dump()}
+    except Exception as e:  # pragma: no cover
+        raise HTTPException(status_code=500, detail=f"Twin upsert failed: {str(e)}")
+
+
+@app.get("/digital_twin/{patient_id}")
+async def get_digital_twin(patient_id: str):
+    """Return the latest twin document if present, otherwise a sensible default."""
+    try:
+        if FIREBASE_AVAILABLE and db is not None:
+            try:
+                doc = db.collection("twin_customizations").document(patient_id).get()
+                if doc.exists:
+                    data = doc.to_dict() or {}
+                    return {
+                        "status": "success",
+                        "twin": {
+                            "patient_id": patient_id,
+                            "height_cm": float(data.get("height_cm") or 170.0),
+                            "weight_kg": float(data.get("weight_kg") or 70.0),
+                            "biomarkers": data.get("biomarkers") or {},
+                            "updated_at": (data.get("lastUpdated") or datetime.utcnow()).isoformat() + "Z",
+                        },
+                    }
+            except Exception as e:  # pragma: no cover
+                logger.warning(f"Firestore read failed: {e}")
+
+        # Default stub if none stored
+        return {
+            "status": "success",
+            "twin": {
+                "patient_id": patient_id,
+                "height_cm": 170.0,
+                "weight_kg": 70.0,
+                "biomarkers": {},
+                "updated_at": datetime.utcnow().isoformat() + "Z",
+            },
+        }
+    except Exception as e:  # pragma: no cover
+        raise HTTPException(status_code=500, detail=f"Twin fetch failed: {str(e)}")
+
 @app.post("/gemini/suggest", response_model=StructuredGeminiOutput)
 async def gemini_suggest(patient_query: PatientQuery):
     """Main Gemini suggestion endpoint"""
@@ -401,7 +531,15 @@ async def gemini_suggest(patient_query: PatientQuery):
     logger.info(f"Query: {patient_query.query_text[:100]}...")
     
     try:
-        response = await gemini_service.get_treatment_suggestion(patient_query)
+        # Extract optional patient context sent by frontend (from Firebase)
+        patient_context = None
+        try:
+            if patient_query.additional_data and isinstance(patient_query.additional_data, dict):
+                patient_context = patient_query.additional_data.get("patient_context")
+        except Exception:
+            patient_context = None
+
+        response = await gemini_service.get_treatment_suggestion(patient_query, patient_context)
         logger.info(f"Gemini suggestion generated (length: {len(response.text)})")
         return response
     except Exception as e:
@@ -414,8 +552,15 @@ async def agent_query(patient_query: PatientQuery):
     logger.info(f"Processing agent query for patient: {patient_query.patient_id}")
     
     try:
-        # Use Gemini service for response
-        gemini_response = await gemini_service.get_treatment_suggestion(patient_query)
+        # Use Gemini service for response (forward patient_context if provided)
+        patient_context = None
+        try:
+            if patient_query.additional_data and isinstance(patient_query.additional_data, dict):
+                patient_context = patient_query.additional_data.get("patient_context")
+        except Exception:
+            patient_context = None
+
+        gemini_response = await gemini_service.get_treatment_suggestion(patient_query, patient_context)
         
         # Convert to AgentResponse format
         suggestions = []
@@ -585,3 +730,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+ 

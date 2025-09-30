@@ -1,6 +1,6 @@
 import os
 import asyncio
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 from .data_models import PatientQuery, StructuredGeminiOutput, GeminiResponseFeatures
 import logging
 
