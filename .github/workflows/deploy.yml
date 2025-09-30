@@ -69,13 +69,15 @@ jobs:
             --region=${{ env.REGION }} \
             --image="$IMAGE" \
             --ingress=all \
-            --cpu=1 \
-            --memory=512Mi \
+            --cpu=2 \
+            --memory=1Gi \
             --concurrency=80 \
             --min-instances=0 \
             --max-instances=2 \
-            --timeout=120 \
-            --set-env-vars=GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }},HF_TOKEN=${{ secrets.HF_TOKEN }}
+            --timeout=300 \
+            --port=8080 \
+            --startup-cpu-boost \
+            --set-env-vars=GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }},HF_TOKEN=${{ secrets.HF_TOKEN }},ENVIRONMENT=production,PORT=8080
 
       - name: Route 100% traffic to latest revision
         run: |
