@@ -1,81 +1,71 @@
 import os
-import google.generativeai as genai
-from dotenv import load_dotenv
-from typing import Dict, Any, List, Union
-from .data_models import PatientQuery, StructuredGeminiOutput, GeminiResponseFeatures
-import datetime
 import asyncio
-import json
+from typing import Dict, Any
+from .data_models import PatientQuery, StructuredGeminiOutput, GeminiResponseFeatures
 import logging
+
+try:
+    import google.generativeai as genai  # type: ignore
+except Exception:
+    genai = None
 
 # Setup logging
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# Load environment variables (respect existing env set by deployment)
-load_dotenv()  # do not override real env injected by platform
-try:
-    _module_env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
-    load_dotenv(_module_env_path)  # local dev convenience only
-except Exception:
-    pass
+model = None  # Will be lazily initialized
 
-# Initialize Gemini service (support both GEMINI_API_KEY and GOOGLE_API_KEY)
 _API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
-if _API_KEY:
+def _ensure_model() -> None:
+    global model
+    if model is not None:
+        return
     try:
-        # Configure Generative AI SDK with API key; avoid altering other Google Cloud envs
-        genai.configure(
-            api_key=_API_KEY,
-            transport='rest'  # Use REST transport
-        )
-
-        # Single-model policy: Gemini 1.5 Pro, with Pro-only fallback
-        _model_names = ["gemini-1.5-pro", "gemini-1.5-pro-latest"]
-        _initialized = False
-        for _name in _model_names:
+        if not genai or not _API_KEY:
+            model = None
+            return
+        genai.configure(api_key=_API_KEY, transport='rest')
+        # Prefer 1.5-pro; fall back to 1.5-flash if necessary
+        for name in ("gemini-1.5-pro", "gemini-1.5-pro-latest", "gemini-1.5-flash"):
             try:
-                model = genai.GenerativeModel(_name)
-                logger.info(f"Successfully initialized Gemini model: {_name}")
-                _initialized = True
-                break
-            except Exception as _me:
-                logger.warning(f"Model init failed for {_name}: {_me}")
-                continue
-        if not _initialized:
-            raise RuntimeError("Failed to initialize Gemini 1.5 Pro model")
-
-    except Exception as _e:
-        logger.exception(f"Failed to initialize Gemini service: {_e}")
+                model = genai.GenerativeModel(name)
+                logger.info(f"Gemini model initialized: {name}")
+                return
+            except Exception as e:
+                logger.warning(f"Gemini model init failed for {name}: {e}")
         model = None
-else:
-    model = None
-    logger.warning("Gemini/Google API key not found - service will use fallback responses")
+    except Exception as e:
+        logger.warning(f"Gemini configuration failed: {e}")
+        model = None
 
 def is_gemini_available() -> bool:
-    """Check if Gemini API is available and configured."""
+    _ensure_model()
     return model is not None
 
 async def test_gemini_connection() -> Dict[str, Any]:
-    """Test Gemini API connection at runtime (not during initialization)"""
-    if not model:
-        return {"available": False, "error": "Model not initialized"}
-    
     try:
-        # Test with a simple query
+        _ensure_model()
+        if not model:
+            return {"available": False, "error": "Model not initialized"}
         if hasattr(model, "generate_content_async"):
-            response = await model.generate_content_async("Hello")
+            resp = await model.generate_content_async("Hello")
         else:
-            response = await asyncio.to_thread(model.generate_content, "Hello")
-        
-        if response and hasattr(response, 'text') and response.text:
-            return {"available": True, "test_response": response.text[:100]}
-        else:
-            return {"available": False, "error": "Empty response from API"}
-            
+            resp = await asyncio.to_thread(model.generate_content, "Hello")
+        return {"available": bool(getattr(resp, "text", "")), "test_response": getattr(resp, "text", "")[:100]}
     except Exception as e:
         return {"available": False, "error": str(e)}
+
+async def generate_text(prompt: str) -> str:
+    """Minimal text generation utility mirroring the HF flow semantics."""
+    _ensure_model()
+    if not model:
+        return ""
+    if hasattr(model, "generate_content_async"):
+        resp = await model.generate_content_async(prompt)
+    else:
+        resp = await asyncio.to_thread(model.generate_content, prompt)
+    return getattr(resp, "text", "") or ""
 
 def format_firestore_timestamp(timestamp_obj) -> str:
     """Safely formats a Firestore Timestamp (or datetime object) to a string."""
@@ -171,12 +161,15 @@ async def get_treatment_suggestion_from_gemini(patient_query: PatientQuery, pati
     """
     Get treatment suggestion from Gemini API
     """
-    if not is_gemini_available():
-        logger.warning("Gemini service is not available. Returning fallback response.")
-        
-        # Return a fallback response
+    # Simple path: try to generate text; otherwise fallback
+    try:
+        text = await generate_text(
+            f"Patient ID: {patient_query.patient_id}\nQuery: {patient_query.query_text}"
+        )
+        if not text:
+            raise Exception("empty response")
         return StructuredGeminiOutput(
-            text="I'm currently unable to process your medical query. Please consult with a healthcare professional for personalized medical advice.",
+            text=text,
             features=GeminiResponseFeatures(
                 category="medical_query",
                 urgency="medium",
@@ -184,91 +177,15 @@ async def get_treatment_suggestion_from_gemini(patient_query: PatientQuery, pati
                 actionable_steps_present=False
             )
         )
-    
-    try:
-        # Create comprehensive prompt for medical consultation
-        prompt = f"""You are a knowledgeable medical AI assistant. Provide helpful, accurate medical information while emphasizing the importance of professional medical consultation.
-
-Patient Query: {patient_query.query_text}
-Patient ID: {patient_query.patient_id}
-Symptoms: {', '.join(patient_query.symptoms) if patient_query.symptoms else 'None specified'}
-
-Context: {json.dumps(patient_context, default=str) if patient_context else 'No additional context provided'}
-
-Please provide:
-1. A helpful and informative response to the patient's query
-2. Relevant medical information and insights
-3. Appropriate recommendations for next steps
-4. Important disclaimers about consulting healthcare professionals
-
-Remember to:
-- Be empathetic and supportive
-- Provide accurate medical information
-- Always recommend professional medical consultation for serious concerns
-- Avoid giving specific medical diagnoses
-- Focus on education and general guidance
-
-Respond in a conversational, caring tone."""
-
-        # Retry logic for API calls with exponential backoff
-        max_retries = 3
-        base_delay = 1.0
-        
-        for attempt in range(max_retries):
-            try:
-                # Compatibility: use async method if available, otherwise offload sync call
-                if hasattr(model, "generate_content_async"):
-                    response = await model.generate_content_async(prompt)
-                else:
-                    response = await asyncio.to_thread(model.generate_content, prompt)
-                
-                if response and hasattr(response, 'text') and response.text:
-                    response_text = response.text
-                    logger.info(f"Gemini API call successful on attempt {attempt + 1}")
-                    break
-                else:
-                    raise Exception("Empty response from Gemini API")
-                    
-            except Exception as api_error:
-                logger.warning(f"Gemini API attempt {attempt + 1} failed: {api_error}")
-                
-                if attempt < max_retries - 1:
-                    delay = base_delay * (2 ** attempt)  # Exponential backoff
-                    logger.info(f"Retrying in {delay} seconds...")
-                    await asyncio.sleep(delay)
-                else:
-                    raise api_error
-        else:
-            response_text = "I apologize, but I'm having trouble processing your request right now. Please try again or consult with a healthcare professional."
-        
-        # Extract keywords from the response and query
-        keywords = patient_query.symptoms if patient_query.symptoms else []
-        if patient_query.query_text:
-            # Simple keyword extraction (could be enhanced)
-            query_words = patient_query.query_text.lower().split()
-            medical_keywords = [word for word in query_words if len(word) > 3]
-            keywords.extend(medical_keywords[:5])  # Limit to 5 additional keywords
-        
-        features = GeminiResponseFeatures(
-            category="medical_query",
-            urgency="medium",
-            keywords=list(set(keywords)),  # Remove duplicates
-            actionable_steps_present=True
-        )
-        
-        return StructuredGeminiOutput(text=response_text, features=features)
-        
     except Exception as e:
-        logger.error(f"Error calling Gemini API: {e}")
-        
-        # Return fallback response on error
+        logger.warning(f"Gemini service error: {e}")
         return StructuredGeminiOutput(
-            text="I apologize, but I'm experiencing technical difficulties right now. Please try again later or consult with a healthcare professional for immediate assistance.",
+            text="I'm currently unable to process your medical query. Please consult with a healthcare professional for personalized medical advice.",
             features=GeminiResponseFeatures(
-                category="system_error",
+                category="medical_query",
                 urgency="medium",
-                keywords=["technical_issue"],
-                actionable_steps_present=True
+                keywords=patient_query.symptoms if patient_query.symptoms else [],
+                actionable_steps_present=False
             )
         )
 

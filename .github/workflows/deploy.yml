@@ -63,12 +63,6 @@ jobs:
       - name: Push Docker image
         run: docker push "$IMAGE"
 
-      - name: Compute allowed origins for CORS
-        run: |
-          # Temporarily allow all origins to validate CORS wiring in Cloud Run
-          echo "ALLOWED_ORIGINS=*" >> $GITHUB_ENV
-          echo "Allowed origins: $ALLOWED_ORIGINS"
-
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy ${{ env.SERVICE_NAME }} \
@@ -81,7 +75,7 @@ jobs:
             --min-instances=0 \
             --max-instances=2 \
             --timeout=120 \
-            --set-env-vars=^~^ALLOWED_ORIGINS=$ALLOWED_ORIGINS~SMPL_ASSETS_BASE_URL=https://storage.googleapis.com/mira-smpl-assets/models~GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}~HF_TOKEN=${{ secrets.HF_TOKEN }}
+            --set-env-vars=GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }},HF_TOKEN=${{ secrets.HF_TOKEN }}
 
       - name: Route 100% traffic to latest revision
         run: |

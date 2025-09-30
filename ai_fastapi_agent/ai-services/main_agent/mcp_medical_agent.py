@@ -1,76 +1,41 @@
-"""
-MCP-Based Medical Agent for Lifelong Medical Assistant
-This agent maintains persistent memory and context across all user interactions.
-"""
-
-import os
-import asyncio
-from typing import Dict, List, Optional, Any
-from datetime import datetime, timedelta
-import json
-import google.generativeai as genai
-from dotenv import load_dotenv
+from typing import Dict, Any, Optional, List
 import logging
+from .firestore_service import FirestoreService
+from .data_models import PatientQuery, AgentResponse, TreatmentSuggestion
 
-# Module-level logger used throughout this module
 logger = logging.getLogger("api")
 
-# Load environment variables (do not override CI/CD secrets)
-load_dotenv()
+# Check if LangGraph is available
 try:
-    _module_env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
-    load_dotenv(_module_env_path)
-except Exception:
-    pass
-
-# Use the shared Gemini client from gemini_service to avoid reconfiguring the SDK
-try:
-    from .gemini_service import model as model, is_gemini_available as _gemini_available
-    if model is not None:
-        logger.info("Gemini client initialized successfully in MCP agent (shared)")
-    else:
-        logger.warning("Shared Gemini client unavailable - MCP agent will use fallback responses")
-except Exception as _e:
-    logger.exception(f"Failed to import shared Gemini client: {_e}")
-    model = None
-
-# Try to import MCP dependencies, but handle gracefully if not available
-try:
-    from langchain_google_alloydb_pg import AlloyDBEngine
-except ImportError:
-    AlloyDBEngine = None
-
-try:
-    from langchain_google_cloud_sql_pg import CloudSQLEngine
-except ImportError:
-    CloudSQLEngine = None
-
-try:
-    from langgraph.checkpoint.memory import MemorySaver
-    from langgraph.graph import StateGraph, END
-    from langgraph.prebuilt import create_react_agent
+    import langgraph
     LANGGRAPH_AVAILABLE = True
 except ImportError:
-    MemorySaver = None
-    StateGraph = None
-    END = None
-    create_react_agent = None
     LANGGRAPH_AVAILABLE = False
 
-# from langchain_core.tools import tool
-# from langchain_core.messages import HumanMessage, AIMessage
-# from langchain_google_genai import ChatGoogleGenerativeAI
-# from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+class MCPMedicalAgent:
+    def __init__(self, db_engine: object = None, firestore_service: object = None):
+        self.db_engine = None
+        self.firestore_service = None
 
-from .data_models import PatientQuery, AgentResponse, TreatmentSuggestion
-from .firestore_service import FirestoreService
+    async def get_patient_memory(self, patient_id: str) -> Dict[str, Any]:
+        return {"patient_id": patient_id, "memory": [], "source": "mcp_stub"}
+
+    async def get_patient_context(self, patient_id: str) -> Dict[str, Any]:
+        return {"patient_id": patient_id, "context": {}}
+
+    async def update_treatment_plan(self, patient_id: str, treatment_plan: Dict[str, Any]) -> bool:
+        return True
 
 # Initialize Gemini model reference (shared)
-gemini_model = model
-if gemini_model:
-    print("✅ Gemini API initialized successfully. AI responses enabled.")
-else:
-    print("⚠️ Gemini API not available. Using fallback responses.")
+try:
+    from .gemini_service import model as gemini_model
+    if gemini_model:
+        print("✅ Gemini API initialized successfully. AI responses enabled.")
+    else:
+        print("⚠️ Gemini API not available. Using fallback responses.")
+except ImportError:
+    gemini_model = None
+    print("⚠️ Gemini service not available. Using fallback responses.")
 
 # Message classes for compatibility
 class HumanMessage:

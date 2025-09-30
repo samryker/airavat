@@ -91,11 +91,11 @@ class ApiService {
         },
       };
 
-      print('API Service: Sending request to $baseUrl/agent/query');
+      print('API Service: Sending request to $baseUrl/gemini/suggest');
       print('API Service: Request body = $requestBody');
 
       final response = await http.post(
-        Uri.parse('$baseUrl/agent/query'),
+        Uri.parse('$baseUrl/gemini/suggest'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -106,7 +106,23 @@ class ApiService {
       print('API Service: Response body = ${response.body}');
 
       if (response.statusCode == 200) {
-        return jsonDecode(response.body);
+        final responseData = jsonDecode(response.body);
+
+        // Convert new Gemini response format to expected format
+        return {
+          'response_text': responseData['text'] ?? 'No response received',
+          'request_id': responseData['request_id'] ??
+              DateTime.now().millisecondsSinceEpoch.toString(),
+          'suggestions': responseData['features'] != null
+              ? [
+                  {
+                    'suggestion_text': 'Consult with a healthcare professional',
+                    'confidence_score': 0.9
+                  }
+                ]
+              : [],
+          'features': responseData['features']
+        };
       } else {
         throw Exception(
             'Failed to get response: ${response.statusCode} - ${response.body}');
@@ -114,6 +130,91 @@ class ApiService {
     } catch (e) {
       print('API Service: Error = $e');
       throw Exception('Error sending query: $e');
+    }
+  }
+
+  // Upload file for analysis
+  static Future<Map<String, dynamic>> uploadFileForAnalysis({
+    required Uint8List fileBytes,
+    required String fileName,
+    required String fileType,
+  }) async {
+    try {
+      final userId = currentUserId;
+      if (userId == null) {
+        throw Exception('User not authenticated');
+      }
+
+      // Create multipart request
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/upload/analyze'),
+      );
+
+      // Add file
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          fileBytes,
+          filename: fileName,
+        ),
+      );
+
+      // Add form fields
+      request.fields['patient_id'] = userId;
+      request.fields['file_type'] = fileType;
+
+      print('API Service: Uploading file $fileName of type $fileType');
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      print('API Service: Upload response status = ${response.statusCode}');
+      print('API Service: Upload response body = ${response.body}');
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        throw Exception(
+            'Failed to upload file: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      print('API Service: Upload error = $e');
+      throw Exception('Error uploading file: $e');
+    }
+  }
+
+  // Get cost estimate for a query
+  static Future<Map<String, dynamic>> getCostEstimate({
+    required String queryText,
+  }) async {
+    try {
+      final userId = currentUserId;
+      if (userId == null) {
+        throw Exception('User not authenticated');
+      }
+
+      final response = await http.get(
+        Uri.parse(
+            '$baseUrl/cost/estimate?patient_id=$userId&query_text=${Uri.encodeComponent(queryText)}'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      );
+
+      print(
+          'API Service: Cost estimate response status = ${response.statusCode}');
+      print('API Service: Cost estimate response body = ${response.body}');
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        throw Exception(
+            'Failed to get cost estimate: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      print('API Service: Cost estimate error = $e');
+      throw Exception('Error getting cost estimate: $e');
     }
   }
 

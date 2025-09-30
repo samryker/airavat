@@ -5,14 +5,71 @@ from datetime import datetime
 
 from firebase_admin import firestore
 
-try:  # LLM integration
-    from main_agent.mcp_medical_agent import RealGeminiLLM, AIMessage
-    _llm = RealGeminiLLM(
-        model=None,  # Uses shared gemini_model from gemini_service
-        temperature=0.1,
-        max_tokens=512,
-        convert_system_message_to_human=True,
-    )
+try:  # LLM integration - Use both Gemini and HF models
+    import requests
+    import os
+    from typing import Dict, Any
+    
+    class _HybridLLM:
+        def __init__(self):
+            self.base_url = os.getenv("BACKEND_URL", "http://localhost:8000")
+            
+        async def ainvoke(self, prompt: str) -> "AIMessage":
+            try:
+                # Use the optimized Gemini endpoint for primary analysis
+                gemini_response = requests.post(
+                    f"{self.base_url}/gemini/suggest",
+                    json={
+                        "patient_id": "digital_twin_service",
+                        "query_text": prompt,
+                        "symptoms": [],
+                        "medical_history": [],
+                        "current_medications": []
+                    },
+                    headers={"Content-Type": "application/json"},
+                    timeout=30
+                )
+                
+                gemini_text = ""
+                if gemini_response.status_code == 200:
+                    gemini_data = gemini_response.json()
+                    gemini_text = gemini_data.get("text", "")
+                
+                # Use HF model for genetic/biomarker analysis if relevant
+                hf_analysis = ""
+                if any(keyword in prompt.lower() for keyword in ['genetic', 'biomarker', 'dna', 'gene', 'mutation', 'variant']):
+                    try:
+                        hf_response = requests.post(
+                            f"{self.base_url}/genetic/analyze",
+                            json={"text": prompt},
+                            headers={"Content-Type": "application/json"},
+                            timeout=20
+                        )
+                        
+                        if hf_response.status_code == 200:
+                            hf_data = hf_response.json()
+                            if "analysis" in hf_data:
+                                hf_analysis = f"\n\nGenetic Analysis: {str(hf_data['analysis'])[:200]}..."
+                    except Exception as e:
+                        print(f"HF analysis failed: {e}")
+                
+                # Combine both analyses
+                combined_response = gemini_text
+                if hf_analysis:
+                    combined_response += hf_analysis
+                
+                return AIMessage(combined_response if combined_response else "Analysis temporarily unavailable")
+                    
+            except Exception as e:
+                print(f"Error calling hybrid LLM service: {e}")
+                return AIMessage("LLM service temporarily unavailable")
+    
+    class AIMessage:
+        def __init__(self, content: str):
+            self.content = content
+    
+    _llm = _HybridLLM()
+    
 except Exception:  # Fallback dummy model when LLM not available
     class AIMessage:  # minimal stand-in
         def __init__(self, content: str):
@@ -139,14 +196,29 @@ async def get_twin(patient_id: str) -> DigitalTwinRecord:
 
 @router.post("/{patient_id}/treatment", response_model=TreatmentUpdateResponse)
 async def process_treatment(patient_id: str, payload: TreatmentUpdatePayload) -> TreatmentUpdateResponse:
-    """Update twin, infer treatment via LLM, and store in Firestore."""
+    """Update twin, infer treatment via hybrid LLM (Gemini + HF), and store in Firestore."""
     record = DigitalTwinRecord(patient_id=patient_id, **payload.model_dump(exclude={"report"}))
     _twin_store[patient_id] = record
 
-    prompt = (
-        "Given the following patient data and report, provide a concise treatment update. Always proacively provie the patient with tests if needed and suggestive lifestyle changes :\n"
-        f"Data: {payload.model_dump(exclude={'report'})}\nReport: {payload.report}"
-    )
+    # Create comprehensive prompt for hybrid analysis
+    prompt = f"""
+    Analyze this patient's digital twin data and provide comprehensive treatment insights:
+    
+    Patient Data:
+    - Height: {payload.height_cm}cm
+    - Weight: {payload.weight_kg}kg
+    - BMI: {round(payload.weight_kg / ((payload.height_cm / 100) ** 2), 1)}
+    - Biomarkers: {payload.biomarkers or {}}
+    
+    Report: {payload.report}
+    
+    Provide:
+    1. Medical analysis and recommendations
+    2. Lifestyle suggestions based on BMI and biomarkers
+    3. Suggested tests if biomarkers indicate concerns
+    4. Proactive health monitoring recommendations
+    """
+    
     result = await _llm.ainvoke(prompt)
     inference = getattr(result, "content", str(result))
 
@@ -161,6 +233,7 @@ async def process_treatment(patient_id: str, payload: TreatmentUpdatePayload) ->
                     "report": payload.report,
                     "inference": inference,
                     "updated_at": datetime.utcnow(),
+                    "analysis_type": "hybrid_gemini_hf"
                 }
             )
             stored = True
@@ -205,16 +278,24 @@ async def get_live_twin_data(patient_id: str) -> Dict[str, Any]:
             except Exception as e:
                 print(f"Error fetching biomarkers: {e}")
         
-        # Generate AI insights
+        # Generate AI insights using hybrid model
         ai_insights = ""
         if biomarkers and smpl_data:
             prompt = f"""
-            Analyze this patient's live data and provide 3-4 key health insights:
+            Analyze this patient's live digital twin data and provide comprehensive health insights:
             
-            Physical: Height {smpl_data.get('height_cm', 'unknown')}cm, Weight {smpl_data.get('weight_kg', 'unknown')}kg, BMI {smpl_data.get('bmi', 'unknown')}
+            Physical Data:
+            - Height: {smpl_data.get('height_cm', 'unknown')}cm
+            - Weight: {smpl_data.get('weight_kg', 'unknown')}kg  
+            - BMI: {smpl_data.get('bmi', 'unknown')}
+            
             Biomarkers: {biomarkers}
             
-            Provide brief, actionable insights about their health status.Be suugestive and proactive about the patient's health.
+            Provide:
+            1. Key health insights based on physical and biomarker data
+            2. Proactive recommendations for health monitoring
+            3. Lifestyle suggestions based on BMI and biomarker patterns
+            4. Any genetic or biomarker concerns that need attention
             """
             try:
                 result = await _llm.ainvoke(prompt)
@@ -272,3 +353,54 @@ async def update_biomarkers(patient_id: str, biomarkers: Dict[str, Any]) -> Dict
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error updating biomarkers: {str(e)}")
+
+@router.post("/{patient_id}/genetic-analysis")
+async def analyze_genetic_data(patient_id: str, genetic_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Analyze genetic data using both Gemini and HF models for digital twin."""
+    try:
+        # Create comprehensive genetic analysis prompt
+        genetic_text = genetic_data.get("genetic_report", "")
+        if not genetic_text:
+            genetic_text = str(genetic_data)
+        
+        # Use hybrid LLM for genetic analysis
+        prompt = f"""
+        Perform comprehensive genetic analysis for this patient's digital twin:
+        
+        Patient ID: {patient_id}
+        Genetic Data: {genetic_text}
+        
+        Provide:
+        1. Genetic risk assessment
+        2. Biomarker correlations with genetic variants
+        3. Personalized health recommendations based on genetics
+        4. Proactive monitoring suggestions for genetic predispositions
+        """
+        
+        result = await _llm.ainvoke(prompt)
+        analysis = getattr(result, "content", "Genetic analysis temporarily unavailable")
+        
+        # Store analysis in Firestore
+        db = _get_db()
+        if db:
+            try:
+                db.collection("genetic_analysis").document(patient_id).set({
+                    "patient_id": patient_id,
+                    "genetic_data": genetic_data,
+                    "analysis": analysis,
+                    "timestamp": datetime.utcnow(),
+                    "analysis_type": "hybrid_gemini_hf"
+                })
+            except Exception as e:
+                print(f"Error storing genetic analysis: {e}")
+        
+        return {
+            "status": "success",
+            "patient_id": patient_id,
+            "genetic_analysis": analysis,
+            "analysis_type": "hybrid_gemini_hf",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error analyzing genetic data: {str(e)}")
