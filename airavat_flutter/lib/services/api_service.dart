@@ -257,29 +257,12 @@ class ApiService {
 
   // Get complete patient context from backend
   static Future<Map<String, dynamic>> getPatientContextFromBackend() async {
-    try {
-      final userId = currentUserId;
-      if (userId == null) {
-        throw Exception('User not authenticated');
-      }
-
-      final response = await http.get(
-        Uri.parse('$baseUrl/agent/patient/$userId/context'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        throw Exception(
-            'Failed to get patient context: ${response.statusCode} - ${response.body}');
-      }
-    } catch (e) {
-      print('API Service: Error getting patient context = $e');
-      throw Exception('Error getting patient context: $e');
-    }
+    // Deprecated server path. Keep for compatibility but redirect to local Firebase context.
+    final ctx = await getPatientContext();
+    return {
+      'status': 'success',
+      'context': _cleanForJsonSerialization(ctx ?? {}),
+    };
   }
 
   // Get conversation history
@@ -541,7 +524,10 @@ class ApiService {
     String contentType = 'application/octet-stream',
   }) async {
     try {
-      final uri = Uri.parse('$baseUrl/files/analyze');
+      final userId = currentUserId;
+      if (userId == null) throw Exception('User not authenticated');
+
+      final uri = Uri.parse('$baseUrl/upload/analyze');
       final request = http.MultipartRequest('POST', uri);
       request.files.add(http.MultipartFile.fromBytes(
         'file',
@@ -549,10 +535,21 @@ class ApiService {
         filename: filename,
         contentType: MediaType.parse(contentType),
       ));
+      request.fields['patient_id'] = userId;
+      request.fields['file_type'] = _inferFileType(filename);
+
       final streamed = await request.send();
       final response = await http.Response.fromStream(streamed);
       if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        // Normalize to legacy format expected by callers
+        final fileAnalysis =
+            (data['file_analysis'] ?? {}) as Map<String, dynamic>;
+        return {
+          'status': 'success',
+          'analysis': fileAnalysis['gemini_response'] ?? 'Analysis complete',
+          'raw': data,
+        };
       }
       throw Exception(
           'Analyze failed: ${response.statusCode} - ${response.body}');
@@ -561,10 +558,27 @@ class ApiService {
     }
   }
 
+  static String _inferFileType(String filename) {
+    final ext = filename.toLowerCase().split('.').last;
+    switch (ext) {
+      case 'pdf':
+      case 'txt':
+      case 'doc':
+      case 'docx':
+        return 'text';
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+        return 'image';
+      default:
+        return 'unknown';
+    }
+  }
+
   // Test the API connection
   static Future<bool> testConnection() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/'));
+      final response = await http.get(Uri.parse('$baseUrl/health'));
       return response.statusCode == 200;
     } catch (e) {
       return false;

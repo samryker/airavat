@@ -125,62 +125,99 @@ class DigitalTwinService {
     TreatmentUpdatePayload payload, {
     String? patientId,
   }) async {
+    // Hybrid summary via both services: upload analyze (Gemini) + genetic analyze (HF)
     final id = patientId ?? _userId;
     if (id == null) throw Exception('User not authenticated');
-    final res = await http.post(
-      Uri.parse('$_base/digital_twin/$id/treatment'),
+
+    // 1) Ensure twin is saved with latest measurements and biomarkers
+    await upsertTwin(
+        DigitalTwinPayload(
+          heightCm: payload.heightCm,
+          weightKg: payload.weightKg,
+          biomarkers: payload.biomarkers,
+        ),
+        patientId: id);
+
+    // 2) Call genetic analysis if biomarkers or report exist
+    Map<String, dynamic>? genetic;
+    try {
+      if ((payload.report.isNotEmpty) ||
+          ((payload.biomarkers ?? {}).isNotEmpty)) {
+        final res = await http.post(
+          Uri.parse('$_base/genetic/analyze'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'text': payload.report.isNotEmpty
+                ? payload.report
+                : 'Biomarkers: ${payload.biomarkers}',
+          }),
+        );
+        if (res.statusCode == 200) {
+          genetic = jsonDecode(res.body) as Map<String, dynamic>;
+        }
+      }
+    } catch (_) {}
+
+    // 3) Ask Gemini for treatment suggestion with a concise context
+    final conciseContext = {
+      'height_cm': payload.heightCm,
+      'weight_kg': payload.weightKg,
+      'biomarkers': payload.biomarkers ?? {},
+      if (genetic != null) 'genetic_summary': genetic['analysis'] ?? genetic,
+    };
+
+    final requestBody = {
+      'patient_id': id,
+      'query_text': 'Provide treatment guidance for the current status.',
+      'additional_data': {'patient_context': conciseContext},
+    };
+
+    final geminiRes = await http.post(
+      Uri.parse('$_base/gemini/suggest'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(payload.toJson()),
+      body: jsonEncode(requestBody),
     );
-    if (res.statusCode == 200) {
-      return TreatmentUpdateResponse.fromJson(jsonDecode(res.body));
+
+    String inference = '';
+    if (geminiRes.statusCode == 200) {
+      final data = jsonDecode(geminiRes.body);
+      inference = data['text']?.toString() ?? '';
+    } else {
+      throw Exception(
+          'Gemini summary failed: ${geminiRes.statusCode} - ${geminiRes.body}');
     }
-    throw Exception(
-        'Process treatment failed: ${res.statusCode} - ${res.body}');
+
+    return TreatmentUpdateResponse(
+      twin: await getTwin(patientId: id),
+      inference: inference,
+      stored: true,
+    );
   }
 
-  /// Get live twin data combining SMPL + biomarkers using existing Cloud Run endpoints
+  /// Get live twin data combining current twin + (optional) biomarkers (from twin only)
   static Future<Map<String, dynamic>> getLiveTwinData(
       {String? patientId}) async {
     final id = patientId ?? _userId;
     if (id == null) throw Exception('User not authenticated');
 
     try {
-      // Get SMPL twin data from existing endpoint
-      Map<String, dynamic> smplData = {};
-      try {
-        final twinRes = await http.get(Uri.parse('$_base/digital_twin/$id'));
-        if (twinRes.statusCode == 200) {
-          smplData = jsonDecode(twinRes.body) as Map<String, dynamic>;
-        }
-      } catch (e) {
-        print('SMPL data not available: $e');
-      }
-
-      // Get biomarkers from agent endpoint
-      Map<String, dynamic> biomarkers = {};
-      try {
-        final bioRes = await http.get(
-            Uri.parse('${BackendConfig.baseUrl}/agent/patient/$id/biomarkers'));
-        if (bioRes.statusCode == 200) {
-          final bioData = jsonDecode(bioRes.body);
-          if (bioData['status'] == 'success') {
-            biomarkers = bioData['biomarkers'] ?? {};
-          }
-        }
-      } catch (e) {
-        print('Biomarker data not available: $e');
-      }
+      // Get twin data (also contains last saved biomarkers)
+      final twinRes = await http.get(Uri.parse('$_base/digital_twin/$id'));
+      final twinJson =
+          twinRes.statusCode == 200 ? jsonDecode(twinRes.body) : {};
+      final twin = twinJson is Map<String, dynamic>
+          ? DigitalTwinRecord.fromJson(twinJson)
+          : null;
 
       // Combine data
       return {
         'patient_id': id,
-        'smpl_data': smplData,
-        'biomarkers': biomarkers,
+        'smpl_data': twinJson,
+        'biomarkers': twin?.biomarkers ?? {},
         'last_updated': DateTime.now().toIso8601String(),
         'data_sources': {
-          'smpl': smplData.isNotEmpty,
-          'biomarkers': biomarkers.isNotEmpty,
+          'smpl': twin != null,
+          'biomarkers': (twin?.biomarkers ?? {}).isNotEmpty,
         }
       };
     } catch (e) {
@@ -188,7 +225,7 @@ class DigitalTwinService {
     }
   }
 
-  /// Update biomarkers using existing twin upsert endpoint
+  /// Update biomarkers by upserting twin only
   static Future<Map<String, dynamic>> updateBiomarkers(
     Map<String, dynamic> biomarkers, {
     String? patientId,

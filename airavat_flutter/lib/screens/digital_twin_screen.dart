@@ -261,8 +261,7 @@ class _DigitalTwinScreenState extends State<DigitalTwinScreen> {
   Future<Map<String, dynamic>> _uploadToGeneticAnalysis(
       List<int> fileBytes, String filename, String userId) async {
     try {
-      final uri = Uri.parse(
-          'https://airavat-backend-10892877764.us-central1.run.app/genetic/analyze');
+      final uri = Uri.parse('${ApiService.baseUrl}/genetic/analyze');
       final request = http.MultipartRequest('POST', uri);
 
       request.files.add(http.MultipartFile.fromBytes(

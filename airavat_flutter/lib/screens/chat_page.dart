@@ -16,6 +16,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   final FocusNode _textFieldFocusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
   bool _sending = false;
+  bool _contextReady = false; // gate send until context is loaded
   String? _currentUserId;
   late AnimationController _fadeController;
   late AnimationController _slideController;
@@ -165,16 +166,20 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
       // Load patient context for personalized experience
       try {
-        final contextResponse = await ApiService.getPatientContextFromBackend();
-        if (contextResponse['status'] == 'success') {
-          final context = contextResponse['context'];
-          print('Loaded patient context: ${context.keys}');
-
-          // Store context for use in conversations
+        final context = await ApiService.getPatientContext();
+        if (context != null) {
+          print('Loaded patient context (local Firebase)');
           _patientContext = context;
+          _contextReady = true;
+          setState(() {});
+        } else {
+          _contextReady = true; // allow chat even if no context
+          setState(() {});
         }
       } catch (e) {
         print('Error loading patient context: $e');
+        _contextReady = true; // fail-open to allow chat
+        setState(() {});
       }
     }
   }
@@ -771,7 +776,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                           child: TextField(
                             controller: _controller,
                             focusNode: _textFieldFocusNode,
-                            enabled: !_sending,
+                            enabled: !_sending && _contextReady,
                             keyboardType: TextInputType.text,
                             textInputAction: TextInputAction.send,
                             maxLines: 1,
@@ -798,8 +803,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                     )
                                   : null,
                             ),
-                            onSubmitted:
-                                _sending ? null : (_) => _sendMessage(),
+                            onSubmitted: (_sending || !_contextReady)
+                                ? null
+                                : (_) => _sendMessage(),
                             onChanged: (value) {
                               setState(() {});
                             },
@@ -874,7 +880,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                           color: Colors.transparent,
                           child: InkWell(
                             borderRadius: BorderRadius.circular(25),
-                            onTap: _sending ? null : _sendMessage,
+                            onTap: (_sending || !_contextReady)
+                                ? null
+                                : _sendMessage,
                             child: Container(
                               padding: EdgeInsets.all(16),
                               child: _sending
