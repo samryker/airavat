@@ -88,7 +88,7 @@ class DigitalTwinService {
   static String? get _userId => FirebaseAuth.instance.currentUser?.uid;
 
   static Future<Map<String, dynamic>> health() async {
-    final res = await http.get(Uri.parse('$_base/digital_twin/health'));
+    final res = await http.get(Uri.parse('$_base/health'));
     if (res.statusCode == 200) {
       return jsonDecode(res.body) as Map<String, dynamic>;
     }
@@ -105,7 +105,12 @@ class DigitalTwinService {
       body: jsonEncode(payload.toJson()),
     );
     if (res.statusCode == 200) {
-      return DigitalTwinRecord.fromJson(jsonDecode(res.body));
+      final body = jsonDecode(res.body);
+      // Accept either wrapped {status, twin:{...}} or raw twin JSON
+      final twinJson = (body is Map<String, dynamic> && body['twin'] != null)
+          ? body['twin'] as Map<String, dynamic>
+          : (body as Map<String, dynamic>);
+      return DigitalTwinRecord.fromJson(twinJson);
     }
     throw Exception(
         'Upsert twin failed: ${res.statusCode} - ${res.body.toString()}');
@@ -116,7 +121,11 @@ class DigitalTwinService {
     if (id == null) throw Exception('User not authenticated');
     final res = await http.get(Uri.parse('$_base/digital_twin/$id'));
     if (res.statusCode == 200) {
-      return DigitalTwinRecord.fromJson(jsonDecode(res.body));
+      final body = jsonDecode(res.body);
+      final twinJson = (body is Map<String, dynamic> && body['twin'] != null)
+          ? body['twin'] as Map<String, dynamic>
+          : (body as Map<String, dynamic>);
+      return DigitalTwinRecord.fromJson(twinJson);
     }
     throw Exception('Get twin failed: ${res.statusCode} - ${res.body}');
   }
@@ -203,11 +212,15 @@ class DigitalTwinService {
     try {
       // Get twin data (also contains last saved biomarkers)
       final twinRes = await http.get(Uri.parse('$_base/digital_twin/$id'));
-      final twinJson =
-          twinRes.statusCode == 200 ? jsonDecode(twinRes.body) : {};
-      final twin = twinJson is Map<String, dynamic>
-          ? DigitalTwinRecord.fromJson(twinJson)
-          : null;
+      Map<String, dynamic> twinJson = {};
+      DigitalTwinRecord? twin;
+      if (twinRes.statusCode == 200) {
+        final body = jsonDecode(twinRes.body);
+        twinJson = (body is Map<String, dynamic> && body['twin'] != null)
+            ? body['twin'] as Map<String, dynamic>
+            : (body as Map<String, dynamic>);
+        twin = DigitalTwinRecord.fromJson(twinJson);
+      }
 
       // Combine data
       return {
