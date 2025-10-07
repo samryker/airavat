@@ -10,13 +10,22 @@ import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 
-# Load environment variables
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-    print("✅ Environment variables loaded from .env file")
-except ImportError:
-    print("⚠️ python-dotenv not available, using system environment variables")
+# Load environment variables ONLY in development
+# In production (Cloud Run), environment variables are already set
+import sys
+IS_PRODUCTION = os.getenv("ENVIRONMENT") == "production" or os.getenv("K_SERVICE") is not None
+
+if not IS_PRODUCTION:
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+        print("✅ Environment variables loaded from .env file (development mode)")
+    except ImportError:
+        print("⚠️ python-dotenv not available, using system environment variables")
+else:
+    print("✅ Production mode: Using Cloud Run environment variables")
+    print(f"   GEMINI_API_KEY present: {bool(os.getenv('GEMINI_API_KEY'))}")
+    print(f"   HF_TOKEN present: {bool(os.getenv('HF_TOKEN'))}")
 
 # FastAPI and related imports
 from fastapi import FastAPI, HTTPException, status, UploadFile, File, Form
@@ -358,21 +367,9 @@ class HuggingFaceService:
             self.client = InferenceClient(token=hf_token)
             logger.info("✅ Hugging Face InferenceClient initialized successfully")
             
-            # Test the connection with a minimal request
-            try:
-                logger.info("🧪 Testing HF API connection...")
-                # This will validate the token without making a heavy request
-                test_result = self.client.token_classification(
-                    "BRCA1 gene",
-                    model="OpenMed/OpenMed-NER-GenomeDetect-SuperClinical-434M"
-                )
-                logger.info(f"✅ HF API connection test successful! ({len(test_result)} entities found)")
-                self.initialized = True
-            except Exception as test_error:
-                logger.error(f"❌ HF API connection test failed: {test_error}")
-                logger.error("   Check if token is valid at https://huggingface.co/settings/tokens")
-                logger.error(f"   Token being used: {token_prefix}...{token_suffix}")
-                self.initialized = False
+            # Mark as initialized - we'll test on first use to avoid blocking startup
+            self.initialized = True
+            logger.info("   HF service ready (will test on first API call)")
             
         except Exception as e:
             logger.error(f"❌ Hugging Face service initialization failed: {e}")
@@ -382,8 +379,13 @@ class HuggingFaceService:
     async def analyze_genetic_text(self, text: str) -> Dict[str, Any]:
         """Analyze genetic text using Hugging Face models"""
         if not self.initialized or not self.client:
+            error_msg = "Hugging Face service not initialized"
+            logger.error(f"❌ {error_msg}")
+            logger.error(f"   initialized: {self.initialized}")
+            logger.error(f"   client: {self.client is not None}")
+            logger.error(f"   HF_TOKEN env: {bool(os.getenv('HF_TOKEN'))}")
             return {
-                "error": "Hugging Face service not available",
+                "error": error_msg,
                 "genetic_markers": [],
                 "genes_analyzed": [],
                 "clinical_significance": [],
@@ -391,7 +393,8 @@ class HuggingFaceService:
             }
         
         try:
-            logger.info(f"Analyzing genetic text (length: {len(text)})")
+            logger.info(f"🧬 Analyzing genetic text (length: {len(text)})")
+            logger.info(f"   Using HF model: OpenMed/OpenMed-NER-GenomeDetect-SuperClinical-434M")
             
             # Use token classification for genetic analysis
             ner_results = await asyncio.to_thread(
