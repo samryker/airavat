@@ -34,12 +34,36 @@ class DigitalTwinRecord extends DigitalTwinPayload {
   }) : super(heightCm: heightCm, weightKg: weightKg, biomarkers: biomarkers);
 
   factory DigitalTwinRecord.fromJson(Map<String, dynamic> json) {
-    final biomarkers = (json['biomarkers'] as Map?)
-        ?.map((k, v) => MapEntry(k.toString(), (v as num).toDouble()));
+    // Handle biomarkers with proper null/num conversion
+    Map<String, double>? biomarkers;
+    try {
+      biomarkers = (json['biomarkers'] as Map?)?.map(
+        (k, v) => MapEntry(
+          k.toString(),
+          v == null
+              ? 0.0
+              : (v is num
+                  ? v.toDouble()
+                  : double.tryParse(v.toString()) ?? 0.0),
+        ),
+      );
+    } catch (e) {
+      print('Error parsing biomarkers: $e');
+      biomarkers = {};
+    }
+
+    // Helper to safely parse numeric values
+    double parseDouble(dynamic value, double defaultValue) {
+      if (value == null) return defaultValue;
+      if (value is num) return value.toDouble();
+      if (value is String) return double.tryParse(value) ?? defaultValue;
+      return defaultValue;
+    }
+
     return DigitalTwinRecord(
       patientId: json['patient_id']?.toString() ?? '',
-      heightCm: (json['height_cm'] as num).toDouble(),
-      weightKg: (json['weight_kg'] as num).toDouble(),
+      heightCm: parseDouble(json['height_cm'], 170.0),
+      weightKg: parseDouble(json['weight_kg'], 70.0),
       biomarkers: biomarkers,
       updatedAt: json['updated_at']?.toString(),
     );

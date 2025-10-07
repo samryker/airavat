@@ -23,10 +23,6 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # Copy the application code
 COPY ai-services/ ./ai-services/
-COPY ai-services/mcp_config.py ./
-
-# Copy Firebase configuration
-COPY firebase.json ./firebase.json
 
 # Create a non-root user for security
 RUN useradd --create-home --shell /bin/bash app && \

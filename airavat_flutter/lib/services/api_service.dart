@@ -630,20 +630,7 @@ class ApiService {
   static Future<List<Map<String, dynamic>>> getUserNotifications(
       String userId) async {
     try {
-      // Try the backend notification endpoint first
-      final response = await http.get(
-        Uri.parse('$baseUrl/notifications/user/$userId'),
-        headers: {'Content-Type': 'application/json'},
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['success'] == true || data['status'] == 'success') {
-          return List<Map<String, dynamic>>.from(data['notifications'] ?? []);
-        }
-      }
-
-      // If new endpoint fails, try alternative Firestore approach
+      // Fetch directly from Firestore (legacy backend endpoint removed)
       try {
         final firebaseNotifications = await FirebaseFirestore.instance
             .collection('notifications')
