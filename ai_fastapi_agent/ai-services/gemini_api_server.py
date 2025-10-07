@@ -335,24 +335,49 @@ class HuggingFaceService:
             hf_token = os.getenv("HF_TOKEN")
             
             if not hf_token:
-                logger.warning("No Hugging Face token found in environment variables")
-                logger.info("Available env vars: HF_TOKEN={}".format(bool(os.getenv("HF_TOKEN"))))
+                logger.error("❌ No Hugging Face token found in environment variables")
+                logger.error(f"   Available env vars: HF_TOKEN={bool(os.getenv('HF_TOKEN'))}")
+                logger.error("   This will cause HF API calls to fail!")
                 return
             
-            # Log token source for debugging
-            logger.info("✅ Hugging Face token loaded from HF_TOKEN")
-            logger.info(f"✅ Hugging Face token found: {hf_token[:10]}...")
+            # Log token info (safely) for debugging
+            token_length = len(hf_token)
+            token_prefix = hf_token[:10] if len(hf_token) > 10 else "***"
+            token_suffix = hf_token[-5:] if len(hf_token) > 5 else "***"
+            
+            logger.info("✅ Hugging Face token loaded from environment")
+            logger.info(f"   Token: {token_prefix}...{token_suffix}")
+            logger.info(f"   Length: {token_length} characters")
+            logger.info(f"   Valid format: {hf_token.startswith('hf_')}")
             
             if not HF_AVAILABLE:
-                logger.error("Hugging Face library not available")
+                logger.error("❌ Hugging Face library not available")
+                logger.error("   Install with: pip install huggingface-hub")
                 return
             
             self.client = InferenceClient(token=hf_token)
-            logger.info("Hugging Face InferenceClient initialized successfully")
-            self.initialized = True
+            logger.info("✅ Hugging Face InferenceClient initialized successfully")
+            
+            # Test the connection with a minimal request
+            try:
+                logger.info("🧪 Testing HF API connection...")
+                # This will validate the token without making a heavy request
+                test_result = self.client.token_classification(
+                    "BRCA1 gene",
+                    model="OpenMed/OpenMed-NER-GenomeDetect-SuperClinical-434M"
+                )
+                logger.info(f"✅ HF API connection test successful! ({len(test_result)} entities found)")
+                self.initialized = True
+            except Exception as test_error:
+                logger.error(f"❌ HF API connection test failed: {test_error}")
+                logger.error("   Check if token is valid at https://huggingface.co/settings/tokens")
+                logger.error(f"   Token being used: {token_prefix}...{token_suffix}")
+                self.initialized = False
             
         except Exception as e:
-            logger.error(f"Hugging Face service initialization failed: {e}")
+            logger.error(f"❌ Hugging Face service initialization failed: {e}")
+            import traceback
+            logger.error(f"   Traceback: {traceback.format_exc()}")
     
     async def analyze_genetic_text(self, text: str) -> Dict[str, Any]:
         """Analyze genetic text using Hugging Face models"""
@@ -480,10 +505,22 @@ async def health_check():
 @app.get("/debug/config")
 async def debug_config():
     """Debug configuration endpoint"""
+    # Get token info safely
+    hf_token = os.getenv("HF_TOKEN")
+    hf_token_info = None
+    if hf_token:
+        hf_token_info = {
+            "length": len(hf_token),
+            "prefix": hf_token[:10] if len(hf_token) > 10 else "***",
+            "suffix": hf_token[-5:] if len(hf_token) > 5 else "***",
+            "valid_format": hf_token.startswith("hf_")
+        }
+    
     return {
         "environment": {
             "GEMINI_API_KEY_PRESENT": bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")),
             "HF_TOKEN_PRESENT": bool(os.getenv("HF_TOKEN")),
+            "HF_TOKEN_INFO": hf_token_info,
             "ENVIRONMENT": os.getenv("ENVIRONMENT", "production"),
             "GITHUB_SECRETS_LOADED": bool(os.getenv("GEMINI_API_KEY") and os.getenv("HF_TOKEN")),
             "GEMINI_KEY_SOURCE": "GEMINI_API_KEY" if os.getenv("GEMINI_API_KEY") else ("GOOGLE_API_KEY" if os.getenv("GOOGLE_API_KEY") else "None"),
@@ -492,6 +529,7 @@ async def debug_config():
         "services": {
             "gemini_initialized": gemini_service.initialized,
             "huggingface_initialized": hf_service.initialized,
+            "hf_client_ready": hf_service.client is not None,
             "gemini_available": GEMINI_AVAILABLE,
             "huggingface_available": HF_AVAILABLE,
             "context_retriever_available": CONTEXT_RETRIEVER_AVAILABLE
