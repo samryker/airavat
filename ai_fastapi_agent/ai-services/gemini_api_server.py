@@ -357,28 +357,71 @@ class HuggingFaceService:
     async def analyze_genetic_text(self, text: str) -> Dict[str, Any]:
         """Analyze genetic text using Hugging Face models"""
         if not self.initialized or not self.client:
-            return {"error": "Hugging Face service not available"}
+            return {
+                "error": "Hugging Face service not available",
+                "genetic_markers": [],
+                "genes_analyzed": [],
+                "clinical_significance": [],
+                "raw_ner_output": []
+            }
         
         try:
             logger.info(f"Analyzing genetic text (length: {len(text)})")
             
             # Use token classification for genetic analysis
-            result = await asyncio.to_thread(
+            ner_results = await asyncio.to_thread(
                 self.client.token_classification,
                 text,
                 model="OpenMed/OpenMed-NER-GenomeDetect-SuperClinical-434M"
             )
             
+            # Parse NER results into structured format
+            genetic_markers = []
+            genes_analyzed = []
+            clinical_significance = []
+            
+            for entity in ner_results:
+                label = entity.get("entity_group") or entity.get("entity")
+                word = entity.get("word", "").strip()
+                score = entity.get("score", 0.0)
+                
+                if not word:
+                    continue
+                
+                if label in ["GENE", "VARIANT", "MUTATION"]:
+                    genetic_markers.append({
+                        "gene_name": word,
+                        "type": label,
+                        "confidence": score
+                    })
+                    
+                if label == "GENE" and word not in genes_analyzed:
+                    genes_analyzed.append(word)
+                    
+                if label in ["DISEASE", "PHENOTYPE", "DISORDER"]:
+                    clinical_significance.append(word)
+            
+            logger.info(f"✅ HF Analysis: {len(genetic_markers)} markers, {len(genes_analyzed)} genes")
+            
             return {
                 "status": "success",
-                "analysis": result,
-                "entities_found": len(result),
+                "genetic_markers": genetic_markers,
+                "genes_analyzed": genes_analyzed,
+                "clinical_significance": clinical_significance,
+                "raw_ner_output": ner_results,
+                "entities_found": len(ner_results),
                 "text_length": len(text)
             }
             
         except Exception as e:
             logger.error(f"Error in genetic analysis: {e}")
-            return {"error": f"Genetic analysis failed: {str(e)}"}
+            return {
+                "error": f"Genetic analysis failed: {str(e)}",
+                "genetic_markers": [],
+                "genes_analyzed": [],
+                "clinical_significance": [],
+                "raw_ner_output": []
+            }
 
 # =============================================================================
 # FASTAPI APPLICATION
@@ -580,19 +623,51 @@ async def agent_query(patient_query: PatientQuery):
         raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
 
 @app.post("/genetic/analyze")
-async def analyze_genetic_text(request: Dict[str, str]):
-    """Genetic text analysis endpoint"""
+async def analyze_genetic_file(
+    file: UploadFile = File(None),
+    user_id: str = Form(None),
+    report_type: str = Form("unknown"),
+    text: str = Form(None)
+):
+    """Genetic analysis endpoint - handles both file uploads and text input"""
     try:
-        text = request.get("text", "")
-        if not text:
+        analysis_text = ""
+        
+        # Check if file was uploaded
+        if file:
+            logger.info(f"Analyzing genetic file: {file.filename} for user: {user_id}")
+            
+            # Read file content
+            content = await file.read()
+            
+            # Check file size (10MB limit for genetic files)
+            max_size = 10 * 1024 * 1024  # 10MB
+            if len(content) > max_size:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail="File too large. Maximum size is 10MB for genetic files"
+                )
+            
+            # Decode content
+            try:
+                analysis_text = content.decode('utf-8', errors='ignore')
+            except Exception as decode_error:
+                logger.warning(f"Failed to decode as UTF-8: {decode_error}")
+                analysis_text = str(content)
+        
+        # Check if text was provided directly
+        elif text:
+            analysis_text = text
+            logger.info(f"Analyzing genetic text (length: {len(text)})")
+        
+        else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Text field is required"
+                detail="Either 'file' or 'text' field is required"
             )
         
-        logger.info(f"Analyzing genetic text (length: {len(text)})")
-        
-        result = await hf_service.analyze_genetic_text(text)
+        # Analyze with HF model
+        result = await hf_service.analyze_genetic_text(analysis_text)
         
         if "error" in result:
             raise HTTPException(
@@ -600,7 +675,26 @@ async def analyze_genetic_text(request: Dict[str, str]):
                 detail=result["error"]
             )
         
-        return result
+        # Format response to match expected frontend format
+        response = {
+            "status": "success",
+            "message": f"Analysis completed for {file.filename if file else 'text input'}",
+            "user_id": user_id,
+            "filename": file.filename if file else None,
+            "file_type": report_type,
+            "file_size": len(content) if file else len(analysis_text),
+            "analysis": {
+                "genetic_markers": result.get("genetic_markers", []),
+                "genes_analyzed": result.get("genes_analyzed", []),
+                "clinical_significance": result.get("clinical_significance", []),
+                "summary": f"Found {len(result.get('genetic_markers', []))} genetic markers and {len(result.get('genes_analyzed', []))} genes"
+            },
+            "raw_ner_output": result.get("raw_ner_output", []),
+            "processed_at": datetime.utcnow().isoformat()
+        }
+        
+        logger.info(f"Genetic analysis completed: {len(result.get('genetic_markers', []))} markers, {len(result.get('genes_analyzed', []))} genes")
+        return response
         
     except HTTPException:
         raise
