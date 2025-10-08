@@ -416,18 +416,25 @@ class HuggingFaceService:
                 if not word:
                     continue
                 
-                if label in ["GENE", "VARIANT", "MUTATION"]:
+                # Handle various entity group formats from HF model
+                # The model returns "GENE/PROTEIN", "DISEASE/PHENOTYPE", etc.
+                label_upper = label.upper() if label else ""
+                
+                if any(x in label_upper for x in ["GENE", "PROTEIN", "VARIANT", "MUTATION", "SNP"]):
                     genetic_markers.append({
                         "gene_name": word,
                         "type": label,
                         "confidence": score
                     })
                     
-                if label == "GENE" and word not in genes_analyzed:
-                    genes_analyzed.append(word)
+                    # Add to genes_analyzed if it looks like a gene
+                    if "GENE" in label_upper or "PROTEIN" in label_upper:
+                        if word not in genes_analyzed:
+                            genes_analyzed.append(word)
                     
-                if label in ["DISEASE", "PHENOTYPE", "DISORDER"]:
-                    clinical_significance.append(word)
+                if any(x in label_upper for x in ["DISEASE", "PHENOTYPE", "DISORDER", "CONDITION"]):
+                    if word not in clinical_significance:
+                        clinical_significance.append(word)
             
             logger.info(f"✅ HF Analysis: {len(genetic_markers)} markers, {len(genes_analyzed)} genes")
             
