@@ -725,11 +725,35 @@ async def analyze_genetic_file(
                     detail="File too large. Maximum size is 10MB for genetic files"
                 )
             
-            # Decode content
+            # Parse content based on file type
             try:
-                analysis_text = content.decode('utf-8', errors='ignore')
+                filename_lower = file.filename.lower()
+                
+                # Handle PDF files
+                if filename_lower.endswith('.pdf'):
+                    logger.info("Parsing PDF file...")
+                    try:
+                        import PyPDF2
+                        import io
+                        pdf_reader = PyPDF2.PdfReader(io.BytesIO(content))
+                        text_parts = []
+                        for page_num, page in enumerate(pdf_reader.pages):
+                            page_text = page.extract_text()
+                            if page_text:
+                                text_parts.append(page_text)
+                        analysis_text = "\n".join(text_parts)
+                        logger.info(f"✅ Extracted {len(analysis_text)} characters from {len(pdf_reader.pages)} PDF pages")
+                    except Exception as pdf_error:
+                        logger.error(f"❌ PDF parsing failed: {pdf_error}")
+                        # Fallback to raw decode
+                        analysis_text = content.decode('utf-8', errors='ignore')
+                
+                # Handle text files
+                else:
+                    analysis_text = content.decode('utf-8', errors='ignore')
+                    
             except Exception as decode_error:
-                logger.warning(f"Failed to decode as UTF-8: {decode_error}")
+                logger.warning(f"Failed to decode file: {decode_error}")
                 analysis_text = str(content)
         
         # Check if text was provided directly
@@ -808,18 +832,59 @@ async def analyze_uploaded_file(
                 detail="File too large. Maximum size is 5MB"
             )
         
-        # Process file based on type
+        # Process file based on type - PARSE PDF PROPERLY
+        file_content_text = None
+        filename_lower = file.filename.lower()
+        
+        # Parse PDF files
+        if filename_lower.endswith('.pdf'):
+            logger.info(f"Parsing PDF file for Gemini: {file.filename}")
+            try:
+                import PyPDF2
+                import io
+                pdf_reader = PyPDF2.PdfReader(io.BytesIO(content))
+                text_parts = []
+                for page in pdf_reader.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text_parts.append(page_text)
+                file_content_text = "\n".join(text_parts)
+                logger.info(f"✅ Extracted {len(file_content_text)} characters from PDF for Gemini analysis")
+            except Exception as pdf_error:
+                logger.error(f"❌ PDF parsing failed: {pdf_error}")
+                file_content_text = content.decode('utf-8', errors='ignore')
+        
+        # Parse text files
+        elif file_type in ['text', 'genetic', 'lab_report'] or filename_lower.endswith(('.txt', '.csv', '.vcf', '.fasta', '.fastq')):
+            file_content_text = content.decode('utf-8', errors='ignore')
+        
         file_info = {
             "name": file.filename,
             "type": file_type,
             "size": len(content),
-            "content": content.decode('utf-8', errors='ignore') if file_type in ['text', 'genetic', 'lab_report'] else None
+            "content": file_content_text
         }
         
-        # Create patient query with file context
+        # Create patient query with ACTUAL file content in the query
+        if file_content_text:
+            # Include actual content in query for Gemini to analyze
+            content_preview = file_content_text[:3000] if len(file_content_text) > 3000 else file_content_text
+            query_text = f"""Please analyze this {file_type} file: {file.filename}
+
+FILE CONTENT:
+{content_preview}
+
+Please provide a comprehensive medical analysis of this report, including:
+1. Key findings and biomarkers
+2. Clinical significance
+3. Recommended actions
+4. Any concerning values or patterns"""
+        else:
+            query_text = f"Please analyze this {file_type} file: {file.filename}"
+        
         patient_query = PatientQuery(
             patient_id=patient_id,
-            query_text=f"Please analyze this {file_type} file: {file.filename}",
+            query_text=query_text,
             uploaded_files=[file_info]
         )
         
