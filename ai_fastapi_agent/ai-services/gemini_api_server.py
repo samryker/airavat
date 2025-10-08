@@ -396,12 +396,41 @@ class HuggingFaceService:
             logger.info(f"🧬 Analyzing genetic text (length: {len(text)})")
             logger.info(f"   Using HF model: OpenMed/OpenMed-NER-GenomeDetect-SuperClinical-434M")
             
-            # Use token classification for genetic analysis
-            ner_results = await asyncio.to_thread(
-                self.client.token_classification,
-                text,
-                model="OpenMed/OpenMed-NER-GenomeDetect-SuperClinical-434M"
-            )
+            # Use token classification with retry logic for HF API
+            max_retries = 3
+            retry_delay = 1.0
+            ner_results = None
+            last_error = None
+            
+            for attempt in range(max_retries):
+                try:
+                    ner_results = await asyncio.to_thread(
+                        self.client.token_classification,
+                        text,
+                        model="OpenMed/OpenMed-NER-GenomeDetect-SuperClinical-434M"
+                    )
+                    break  # Success, exit retry loop
+                except Exception as api_error:
+                    last_error = api_error
+                    error_str = str(api_error)
+                    
+                    # Check if it's a rate limit or server error (503, 500, 429)
+                    if any(code in error_str for code in ["503", "500", "429", "Server Error", "Internal Server Error"]):
+                        if attempt < max_retries - 1:
+                            wait_time = retry_delay * (2 ** attempt)  # Exponential backoff
+                            logger.warning(f"⚠️  HF API error (attempt {attempt + 1}/{max_retries}): {error_str}")
+                            logger.info(f"   Retrying in {wait_time}s...")
+                            await asyncio.sleep(wait_time)
+                        else:
+                            logger.error(f"❌ HF API failed after {max_retries} attempts: {error_str}")
+                            raise
+                    else:
+                        # Non-retryable error (auth, invalid input, etc.)
+                        logger.error(f"❌ HF API non-retryable error: {error_str}")
+                        raise
+            
+            if ner_results is None:
+                raise last_error or Exception("HF API returned no results")
             
             # Parse NER results into structured format
             genetic_markers = []
@@ -714,14 +743,21 @@ async def analyze_genetic_file(
                 detail="Either 'file' or 'text' field is required"
             )
         
-        # Analyze with HF model
+        # Analyze with HF model (with graceful degradation)
         result = await hf_service.analyze_genetic_text(analysis_text)
         
+        # Check if HF analysis failed but don't raise 503 - return partial results
         if "error" in result:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=result["error"]
-            )
+            logger.warning(f"⚠️  HF analysis failed, returning partial results: {result['error']}")
+            # Return success with empty results instead of failing completely
+            result = {
+                "status": "partial",
+                "genetic_markers": [],
+                "genes_analyzed": [],
+                "clinical_significance": [],
+                "raw_ner_output": [],
+                "warning": f"Genetic analysis temporarily unavailable: {result['error']}"
+            }
         
         # Format response to match expected frontend format
         response = {
