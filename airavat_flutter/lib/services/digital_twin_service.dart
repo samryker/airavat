@@ -176,15 +176,22 @@ class DigitalTwinService {
     try {
       if ((payload.report.isNotEmpty) ||
           ((payload.biomarkers ?? {}).isNotEmpty)) {
-        final res = await http.post(
+        // Use multipart form data (not JSON) as backend expects Form fields
+        final request = http.MultipartRequest(
+          'POST',
           Uri.parse('$_base/genetic/analyze'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'text': payload.report.isNotEmpty
-                ? payload.report
-                : 'Biomarkers: ${payload.biomarkers}',
-          }),
         );
+        
+        // Add text field as Form data
+        request.fields['text'] = payload.report.isNotEmpty
+            ? payload.report
+            : 'Biomarkers: ${payload.biomarkers}';
+        request.fields['user_id'] = id;
+        request.fields['report_type'] = 'biomarkers';
+        
+        final streamedResponse = await request.send();
+        final res = await http.Response.fromStream(streamedResponse);
+        
         if (res.statusCode == 200) {
           genetic = jsonDecode(res.body) as Map<String, dynamic>;
         }
