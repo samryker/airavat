@@ -405,6 +405,21 @@ async def update_treatment_plan(plan_update: TreatmentPlanUpdate):
     """
     logger.info(f"Updating treatment plan for patient: {plan_update.patient_id}")
     try:
+        # Persist to Firestore under collection 'treatment_plan' (backend-managed)
+        try:
+            if db is not None:
+                plan_doc = {
+                    "patient_id": plan_update.patient_id,
+                    "plan": plan_update.treatment_plan,
+                    "plan_type": plan_update.plan_type,
+                    "priority": plan_update.priority,
+                    "timestamp": firestore.SERVER_TIMESTAMP,
+                    "source": "digital_twin_save",
+                }
+                db.collection("treatment_plan").document(plan_update.patient_id).collection("history").add(plan_doc)
+        except Exception as persist_err:
+            logger.warning(f"Failed to persist treatment plan to Firestore: {persist_err}")
+
         success = await medical_agent.update_treatment_plan(plan_update.patient_id, plan_update.treatment_plan)
         if success:
             return {
