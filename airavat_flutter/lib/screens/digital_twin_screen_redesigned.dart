@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:lottie/lottie.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:go_router/go_router.dart';
 import '../services/api_service.dart';
 
 /// Modern redesigned Digital Twin screen matching the provided UI mockup
@@ -323,7 +324,7 @@ class _DigitalTwinScreenRedesignedState
               ),
             ),
             IconButton(
-              onPressed: () => Navigator.of(context).pushNamed('/dashboard'),
+              onPressed: () => context.go('/dashboard'),
               icon: Icon(Icons.home_outlined, color: Colors.white),
               tooltip: 'Back to Dashboard',
             )

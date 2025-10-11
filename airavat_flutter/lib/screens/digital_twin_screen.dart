@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../services/digital_twin_service.dart';
+import 'package:go_router/go_router.dart';
 import '../services/api_service.dart';
 
 class DigitalTwinScreen extends StatefulWidget {
@@ -360,7 +361,7 @@ class _DigitalTwinScreenState extends State<DigitalTwinScreen> {
           IconButton(
             icon: const Icon(Icons.home_outlined),
             tooltip: 'Back to Dashboard',
-            onPressed: () => Navigator.of(context).pushNamed('/dashboard'),
+            onPressed: () => context.go('/dashboard'),
           ),
         ],
       ),

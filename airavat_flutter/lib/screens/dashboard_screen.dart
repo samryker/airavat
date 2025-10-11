@@ -1,7 +1,7 @@
 // lib/screens/dashboard_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:file_picker/file_picker.dart';
+// import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -10,7 +10,7 @@ import '../services/twin_service.dart';
 import '../services/digital_twin_service.dart';
 import '../widgets/webgl_twin_widget.dart';
 import '../providers/theme_provider.dart';
-import '../config/theme_config.dart';
+// import '../config/theme_config.dart';
 // import '../widgets/smpl_controls.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -20,16 +20,17 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen>
     with WidgetsBindingObserver {
-  List<PlatformFile> _files = [];
-  List<Map<String, String>> _messages = [];
+  // Unused fields removed for lint cleanliness
+  // List<PlatformFile> _files = [];
+  // List<Map<String, String>> _messages = [];
   final TextEditingController _controller = TextEditingController();
   final FocusNode _textFieldFocusNode = FocusNode();
-  bool _sending = false;
+  // bool _sending = false;
   String? _currentUserId;
   Map<String, dynamic>? _userBiomarkers;
   String? _userModelUrl;
-  bool _isChatOpen = false;
-  String _selectedOrgan = 'Heart';
+  // bool _isChatOpen = false;
+  // String _selectedOrgan = 'Heart';
   List<Map<String, dynamic>> _treatmentHistory = [];
   bool _isLoadingTreatments = false;
   List<Map<String, dynamic>> _notifications = [];
@@ -399,26 +400,29 @@ class _DashboardScreenState extends State<DashboardScreen>
                   // Top Header
                   _buildTopHeader(context, isDark),
 
-                  // Main Dashboard Content
+                  // Main Dashboard Content with scroll on desktop
                   Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24.0),
-                      child: Row(
-                        children: [
-                          // Left Column - Organ Overview
-                          Expanded(
-                            flex: 2,
-                            child: _buildOrganOverview(context, isDark),
-                          ),
+                    child: SingleChildScrollView(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24.0),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Left Column - Organ Overview
+                            Expanded(
+                              flex: 2,
+                              child: _buildOrganOverview(context, isDark),
+                            ),
 
-                          const SizedBox(width: 24),
+                            const SizedBox(width: 24),
 
-                          // Right Column - Metrics & Appointments
-                          Expanded(
-                            flex: 1,
-                            child: _buildRightColumn(context, isDark),
-                          ),
-                        ],
+                            // Right Column - Metrics & Appointments
+                            Expanded(
+                              flex: 1,
+                              child: _buildRightColumn(context, isDark),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -512,8 +516,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   Widget _buildTopHeader(BuildContext context, bool isDark) {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
-    final screenSize = MediaQuery.of(context).size;
-    final isMobile = screenSize.width < 768;
+    // Removed unused responsive local vars to satisfy lints
 
     return Container(
       padding: EdgeInsets.all(16),
@@ -594,18 +597,14 @@ class _DashboardScreenState extends State<DashboardScreen>
             initialHeightCm: _smplHeight,
             initialWeightKg: _smplWeight,
             initialBeta1: _smplBeta1,
-            onOrganSelected: (organ) {
-              setState(() {
-                _selectedOrgan = organ;
-              });
-            },
+            onOrganSelected: (_) {},
           ),
         ),
         const SizedBox(height: 20),
         if (!isMobile) ...[
           _buildTreatmentHistoryHeader(textTheme, theme),
           SizedBox(height: 16),
-          Expanded(child: _buildDesktopTreatmentHistoryList(context, isDark)),
+          SizedBox(height: 380, child: _buildDesktopTreatmentHistoryList(context, isDark)),
         ],
       ],
     );
