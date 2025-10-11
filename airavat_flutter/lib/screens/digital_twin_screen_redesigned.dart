@@ -310,14 +310,24 @@ class _DigitalTwinScreenRedesignedState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Digital Twin',
-          style: TextStyle(
-            fontSize: 36,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-            letterSpacing: -0.5,
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Comparative Analysis Service',
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                letterSpacing: -0.5,
+              ),
+            ),
+            IconButton(
+              onPressed: () => Navigator.of(context).pushNamed('/dashboard'),
+              icon: Icon(Icons.home_outlined, color: Colors.white),
+              tooltip: 'Back to Dashboard',
+            )
+          ],
         ),
         const SizedBox(height: 8),
         Text(

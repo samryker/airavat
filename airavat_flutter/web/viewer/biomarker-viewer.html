@@ -218,12 +218,15 @@
   </div>
 
   <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+    import { getAuth } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+    import { getFirestore, doc, getDoc, collection, query, orderBy, limit, getDocs } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
     import BiomarkerDigitalTwin from './src/biomarker-twin.js';
     
     let digitalTwin = null;
     
     // Initialize the digital twin
-    function initDigitalTwin() {
+    async function initDigitalTwin() {
       const container = document.getElementById('container');
       digitalTwin = new BiomarkerDigitalTwin(container, {
         backendUrl: 'https://airavat-backend-10892877764.us-central1.run.app',
@@ -233,6 +236,22 @@
       
       document.getElementById('status').textContent = 'Live Digital Twin Ready';
       console.log('✅ Biomarker Digital Twin initialized');
+
+      // Initialize Firebase for biomarker bootstrap
+      try {
+        const firebaseConfig = {
+          apiKey: 'AIzaSyDP_fSOnjUA72A4ZtcVBnwyGnhUm33t8wU',
+          authDomain: 'airavat-a3a10.firebaseapp.com',
+          projectId: 'airavat-a3a10',
+          storageBucket: 'airavat-a3a10.firebasestorage.app',
+          messagingSenderId: '124145466298',
+          appId: '1:124145466298:web:89b3750e1669cedb25bb83',
+        };
+        const app = initializeApp(firebaseConfig);
+        window._firebaseDb = getFirestore(app);
+      } catch (e) {
+        console.warn('Firebase init failed for biomarker bootstrap', e);
+      }
     }
     
     // Load patient function
@@ -252,6 +271,8 @@
       try {
         await digitalTwin.loadPatient(patientId, { height, weight, gender });
         document.getElementById('status').textContent = `Patient ${patientId} loaded`;
+        // Attempt to load biomarkers from Firebase first
+        await bootstrapBiomarkersFromFirebase(patientId);
         updateBiomarkerPanel();
       } catch (error) {
         console.error('Error loading patient:', error);
@@ -302,6 +323,44 @@
         
         biomarkerList.appendChild(item);
       });
+    }
+
+    // Bootstrap biomarkers from Firebase if present; fallback to BMI from account profile on first signup
+    async function bootstrapBiomarkersFromFirebase(patientId) {
+      if (!window._firebaseDb) return;
+      try {
+        const db = window._firebaseDb;
+        // Try latest biomarker report
+        const reportsRef = collection(db, 'biomarkers', patientId, 'reports');
+        const q = query(reportsRef, orderBy('timestamp', 'desc'), limit(1));
+        const docsSnap = await getDocs(q);
+        let loaded = false;
+        docsSnap.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (data && data.biomarkers) {
+            digitalTwin.biomarkerData = data.biomarkers;
+            loaded = true;
+          }
+        });
+        if (loaded) return;
+
+        // Fallback: use BMI values from account profile
+        const patientDoc = await getDoc(doc(db, 'patients', patientId));
+        if (patientDoc.exists()) {
+          const pdata = patientDoc.data();
+          const bmiIndex = pdata && pdata.bmiIndex ? pdata.bmiIndex : 'Normal';
+          const heuristic = bmiIndex.toString().toLowerCase();
+          const bmiBiomarkers = {
+            glucose: heuristic.includes('over') || heuristic.includes('obese') ? 110 : 95,
+            cholesterol: heuristic.includes('over') || heuristic.includes('obese') ? 210 : 180,
+            heart_rate: 72,
+            oxygen_saturation: 98,
+          };
+          digitalTwin.biomarkerData = { ...(digitalTwin.biomarkerData || {}), ...bmiBiomarkers };
+        }
+      } catch (e) {
+        console.warn('Failed to bootstrap biomarkers from Firebase', e);
+      }
     }
     
     // Listen for messages from Flutter

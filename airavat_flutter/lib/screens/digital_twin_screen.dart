@@ -355,7 +355,14 @@ class _DigitalTwinScreenState extends State<DigitalTwinScreen> {
     final user = FirebaseAuth.instance.currentUser;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Digital Twin Service'),
+        title: const Text('Comparative Analysis Service'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.home_outlined),
+            tooltip: 'Back to Dashboard',
+            onPressed: () => Navigator.of(context).pushNamed('/dashboard'),
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),

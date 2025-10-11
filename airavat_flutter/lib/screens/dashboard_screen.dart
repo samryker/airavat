@@ -11,7 +11,7 @@ import '../services/digital_twin_service.dart';
 import '../widgets/webgl_twin_widget.dart';
 import '../providers/theme_provider.dart';
 import '../config/theme_config.dart';
-import '../widgets/smpl_controls.dart';
+// import '../widgets/smpl_controls.dart';
 
 class DashboardScreen extends StatefulWidget {
   @override
@@ -483,13 +483,13 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
           ListTile(
             leading:
-                Icon(Icons.model_training_outlined, color: theme.primaryColor),
-            title: Text('Digital Twin (Old)', style: textTheme.bodyMedium),
+                Icon(Icons.compare_arrows_outlined, color: theme.primaryColor),
+            title: Text('Comparative Analysis Service',
+                style: textTheme.bodyMedium),
             onTap: () => context.go('/digital-twin'),
           ),
           ListTile(
-            leading:
-                Icon(Icons.auto_awesome, color: theme.primaryColor),
+            leading: Icon(Icons.auto_awesome, color: theme.primaryColor),
             title: Text('Digital Twin (AI)', style: textTheme.bodyMedium),
             onTap: () => context.go('/digital-twin-new'),
           ),
@@ -585,7 +585,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         _buildSectionTitle('Organ Overview', textTheme, theme),
         SizedBox(height: 16),
         Container(
-          height: isMobile ? 420 : screenSize.height * 0.5,
+          height: isMobile ? 520 : screenSize.height * 0.65,
           child: WebGLTwinWidget(
             userId: _currentUserId,
             userBiomarkers: _userBiomarkers,
@@ -601,20 +601,7 @@ class _DashboardScreenState extends State<DashboardScreen>
             },
           ),
         ),
-        const SizedBox(height: 12),
-        // SMPL Controls (Flutter)
-        SmplControls(
-          onChange: (
-              {String? gender, double? height, double? weight, double? beta1}) {
-            setState(() {
-              if (gender != null) _smplGender = gender;
-              if (height != null) _smplHeight = height;
-              if (weight != null) _smplWeight = weight;
-              if (beta1 != null) _smplBeta1 = beta1;
-            });
-          },
-        ),
-        SizedBox(height: 20),
+        const SizedBox(height: 20),
         if (!isMobile) ...[
           _buildTreatmentHistoryHeader(textTheme, theme),
           SizedBox(height: 16),
