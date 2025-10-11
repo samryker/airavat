@@ -484,8 +484,14 @@ class _DashboardScreenState extends State<DashboardScreen>
           ListTile(
             leading:
                 Icon(Icons.model_training_outlined, color: theme.primaryColor),
-            title: Text('Digital Twin', style: textTheme.bodyMedium),
+            title: Text('Digital Twin (Old)', style: textTheme.bodyMedium),
             onTap: () => context.go('/digital-twin'),
+          ),
+          ListTile(
+            leading:
+                Icon(Icons.auto_awesome, color: theme.primaryColor),
+            title: Text('Digital Twin (AI)', style: textTheme.bodyMedium),
+            onTap: () => context.go('/digital-twin-new'),
           ),
           ListTile(
             leading:

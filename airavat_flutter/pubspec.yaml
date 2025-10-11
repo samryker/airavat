@@ -43,7 +43,7 @@ dependencies:
   provider: ^6.0.5
   file_picker: ^6.1.1
   fl_chart: ^0.60.0
-  lottie:
+  lottie: ^2.6.0
   http: ^1.1.0
   shared_preferences: ^2.0.15
 
@@ -74,6 +74,7 @@ flutter:
     - assets/animations/onboard1.json
     - assets/animations/onboard2.json
     - assets/animations/onboard3.json
+    - assets/animations/medical_scan.json
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg

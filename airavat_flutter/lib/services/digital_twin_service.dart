@@ -181,17 +181,17 @@ class DigitalTwinService {
           'POST',
           Uri.parse('$_base/genetic/analyze'),
         );
-        
+
         // Add text field as Form data
         request.fields['text'] = payload.report.isNotEmpty
             ? payload.report
             : 'Biomarkers: ${payload.biomarkers}';
         request.fields['user_id'] = id;
         request.fields['report_type'] = 'biomarkers';
-        
+
         final streamedResponse = await request.send();
         final res = await http.Response.fromStream(streamedResponse);
-        
+
         if (res.statusCode == 200) {
           genetic = jsonDecode(res.body) as Map<String, dynamic>;
         }

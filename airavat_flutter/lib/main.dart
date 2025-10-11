@@ -18,6 +18,7 @@ import 'screens/onboarding_screen3.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/chat_page.dart';
 import 'screens/digital_twin_screen.dart';
+import 'screens/digital_twin_screen_redesigned.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -47,6 +48,8 @@ class DigitalTwinApp extends StatelessWidget {
       GoRoute(path: '/chat', builder: (_, __) => ChatPage()),
       GoRoute(
           path: '/digital-twin', builder: (_, __) => const DigitalTwinScreen()),
+      GoRoute(
+          path: '/digital-twin-new', builder: (_, __) => const DigitalTwinScreenRedesigned()),
     ],
     // Redirect after sign-up/login to /account:
     redirect: (context, state) {

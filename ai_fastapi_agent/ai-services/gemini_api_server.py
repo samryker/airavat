@@ -529,6 +529,13 @@ try:
 except Exception:
     logger.warning("SMPL router unavailable; /smpl endpoints will return 404")
 
+try:
+    from digital_twin_service.router import router as digital_twin_router
+    app.include_router(digital_twin_router)
+    logger.info("✅ Digital Twin router loaded successfully")
+except Exception as e:
+    logger.warning(f"Digital Twin router unavailable: {e}; /digital_twin endpoints will return 404")
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
