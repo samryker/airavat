@@ -826,94 +826,136 @@ async def analyze_uploaded_file(
     patient_id: str = Form(...),
     file_type: str = Form("unknown")
 ):
-    """Analyze uploaded file with Gemini and HF models"""
+    """Analyze uploaded file using the precise flow:
+    File Upload → HF model → Optimized Context Retriever → Gemini distillation → Structured output
+    """
     try:
-        # Read file content
+        # 0) Read file safely with size limits
         content = await file.read()
-        
-        # Check file size (5MB limit)
         max_size = 5 * 1024 * 1024  # 5MB
         if len(content) > max_size:
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                 detail="File too large. Maximum size is 5MB"
             )
-        
-        # Process file based on type - PARSE PDF PROPERLY
+
+        # 1) Extract text from file (PDF and text)
         file_content_text = None
         filename_lower = file.filename.lower()
-        
-        # Parse PDF files
         if filename_lower.endswith('.pdf'):
-            logger.info(f"Parsing PDF file for Gemini: {file.filename}")
+            logger.info(f"Parsing PDF for HF+Gemini pipeline: {file.filename}")
             try:
-                import PyPDF2
-                import io
+                import PyPDF2, io
                 pdf_reader = PyPDF2.PdfReader(io.BytesIO(content))
-                text_parts = []
+                parts = []
                 for page in pdf_reader.pages:
                     page_text = page.extract_text()
                     if page_text:
-                        text_parts.append(page_text)
-                file_content_text = "\n".join(text_parts)
-                logger.info(f"✅ Extracted {len(file_content_text)} characters from PDF for Gemini analysis")
-            except Exception as pdf_error:
-                logger.error(f"❌ PDF parsing failed: {pdf_error}")
+                        parts.append(page_text)
+                file_content_text = "\n".join(parts)
+            except Exception as e:
+                logger.warning(f"PDF parse failed, falling back to UTF-8: {e}")
                 file_content_text = content.decode('utf-8', errors='ignore')
-        
-        # Parse text files
         elif file_type in ['text', 'genetic', 'lab_report'] or filename_lower.endswith(('.txt', '.csv', '.vcf', '.fasta', '.fastq')):
             file_content_text = content.decode('utf-8', errors='ignore')
-        
-        file_info = {
-            "name": file.filename,
-            "type": file_type,
-            "size": len(content),
-            "content": file_content_text
+
+        # Guard: no usable text
+        if not file_content_text or not file_content_text.strip():
+            file_content_text = "(no parsable text content)"
+
+        # 2) HF model analysis (graceful degradation)
+        hf_summary: Dict[str, Any] = {
+            "genetic_markers": [],
+            "genes_analyzed": [],
+            "clinical_significance": [],
+            "raw_ner_output": []
         }
-        
-        # Create patient query with ACTUAL file content in the query
-        if file_content_text:
-            # Include actual content in query for Gemini to analyze
-            content_preview = file_content_text[:3000] if len(file_content_text) > 3000 else file_content_text
-            query_text = f"""Please analyze this {file_type} file: {file.filename}
+        try:
+            # Only run HF for relevant types; for generic lab reports, it still extracts medical entities
+            hf_result = await hf_service.analyze_genetic_text(file_content_text)
+            if isinstance(hf_result, dict):
+                hf_summary.update({
+                    "genetic_markers": hf_result.get("genetic_markers", []),
+                    "genes_analyzed": hf_result.get("genes_analyzed", []),
+                    "clinical_significance": hf_result.get("clinical_significance", []),
+                    "raw_ner_output": hf_result.get("raw_ner_output", [])
+                })
+        except Exception as e:
+            logger.warning(f"HF analysis failed; continuing with raw text only: {e}")
 
-FILE CONTENT:
-{content_preview}
+        # 3) Optimized Context Retriever for reduced tokenizer usage (if available)
+        context_text = None
+        if gemini_service.context_retriever is not None:
+            try:
+                # Encode a minimal uploaded file descriptor for retriever
+                uploaded_files = [{
+                    "name": file.filename,
+                    "type": file_type or "lab_report",
+                    "content": file_content_text
+                }]
+                ctx = await gemini_service.context_retriever.retrieve(
+                    patient_id=patient_id,
+                    query_text="Lab report analysis",
+                    uploaded_files=uploaded_files
+                )
+                context_text = ctx.get("trimmed_context_text")
+            except Exception as e:
+                logger.warning(f"Context retrieval failed; falling back to raw text: {e}")
 
-Please provide a comprehensive medical analysis of this report, including:
-1. Key findings and biomarkers
-2. Clinical significance
-3. Recommended actions
-4. Any concerning values or patterns"""
-        else:
-            query_text = f"Please analyze this {file_type} file: {file.filename}"
-        
+        # Final context that Gemini will see
+        final_context = context_text or file_content_text[:3000]
+
+        # 4) Gemini distillation with HF signal injected
+        prompt = f"""
+You are a medical AI assistant. Analyze the following lab report.
+
+Patient ID: {patient_id}
+File: {file.filename} (type={file_type})
+
+Context (token-optimized):
+{final_context}
+
+Signals extracted by an auxiliary HF medical NER model (if any):
+GENETIC_MARKERS: {hf_summary.get('genetic_markers')}
+CLINICAL_SIGNIFICANCE: {hf_summary.get('clinical_significance')}
+
+Please provide a structured response with these sections:
+PRIMARY ANALYSIS:
+CONFIDENCE: (add a percentage)
+MEDICAL INFERENCES:
+PROACTIVE RECOMMENDATIONS:
+SEVERITY:
+PRIORITY:
+"""
+
         patient_query = PatientQuery(
             patient_id=patient_id,
-            query_text=query_text,
-            uploaded_files=[file_info]
+            query_text=prompt,
+            uploaded_files=[{
+                "name": file.filename,
+                "type": file_type,
+                "size": len(content)
+            }]
         )
-        
-        # Get analysis from Gemini
-        response = await gemini_service.get_treatment_suggestion(patient_query)
-        
-        # If it's a genetic file, also run HF analysis
-        hf_analysis = None
-        if file_type == "genetic" and file_info["content"]:
-            hf_analysis = await hf_service.analyze_genetic_text(file_info["content"])
-        
+
+        gemini_resp = await gemini_service.get_treatment_suggestion(patient_query)
+
+        # 5) Return structured envelope compatible with existing frontend
         return {
             "status": "success",
             "file_analysis": {
                 "filename": file.filename,
                 "type": file_type,
                 "size": len(content),
-                "gemini_response": response.text,
-                "hf_analysis": hf_analysis if hf_analysis else None
+                "gemini_response": gemini_resp.text,
+                "hf_analysis": hf_summary
+            },
+            "context": {
+                "used_context": bool(context_text),
+                "approx_tokens": len(final_context) // 3 if final_context else 0
             }
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
