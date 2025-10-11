@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:lottie/lottie.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/api_service.dart';
 
 /// Modern redesigned Digital Twin screen matching the provided UI mockup
@@ -117,8 +118,8 @@ class _DigitalTwinScreenRedesignedState
 
     try {
       final baseUrl = ApiService.baseUrl;
-      final uri =
-          Uri.parse('$baseUrl/digital_twin/${user.uid}/analyze-lab-report');
+      // Use existing, established backend endpoint to avoid new routes
+      final uri = Uri.parse('$baseUrl/upload/analyze');
 
       // Create multipart request
       var request = http.MultipartRequest('POST', uri);
@@ -127,6 +128,9 @@ class _DigitalTwinScreenRedesignedState
         _selectedFile!.bytes!,
         filename: _selectedFileName,
       ));
+      // Provide required form fields expected by existing endpoint
+      request.fields['patient_id'] = user.uid;
+      request.fields['file_type'] = 'lab_report';
 
       // Send request
       final streamedResponse = await request.send();
@@ -134,15 +138,19 @@ class _DigitalTwinScreenRedesignedState
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+        // Existing endpoint returns a wrapper with gemini_response text
+        final String rawText =
+            data['file_analysis']?['gemini_response']?.toString() ?? '';
+        final parsed = _parseGeminiText(rawText);
 
         setState(() {
-          _confidenceScore = data['confidence_score'].toString();
-          _severity = data['severity'];
-          _priority = data['priority'];
-          _primaryAnalysis = data['primary_analysis'];
-          _medicalInferences = data['medical_inferences'];
-          _proactiveRecommendations = data['proactive_recommendations'];
-          _fullAnalysis = data['full_analysis'];
+          _confidenceScore = parsed['confidence_score'].toString();
+          _severity = parsed['severity'];
+          _priority = parsed['priority'];
+          _primaryAnalysis = parsed['primary_analysis'];
+          _medicalInferences = parsed['medical_inferences'];
+          _proactiveRecommendations = parsed['proactive_recommendations'];
+          _fullAnalysis = parsed['full_analysis'];
           _hasResults = true;
         });
 
@@ -181,30 +189,28 @@ class _DigitalTwinScreenRedesignedState
     if (user == null) return;
 
     try {
-      final baseUrl = ApiService.baseUrl;
-      final uri = Uri.parse('$baseUrl/digital_twin/${user.uid}/save-analysis');
+      // Save directly to Firestore to avoid new backend endpoints
+      final doc = {
+        'filename': _selectedFileName,
+        'confidence_score': _confidenceScore,
+        'severity': _severity,
+        'priority': _priority,
+        'full_analysis': _fullAnalysis,
+        'primary_analysis': _primaryAnalysis,
+        'medical_inferences': _medicalInferences,
+        'proactive_recommendations': _proactiveRecommendations,
+        'timestamp': DateTime.now(),
+        'analysis_type': 'upload_analyze_structured',
+      };
 
-      final response = await http.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'filename': _selectedFileName,
-          'confidence_score': _confidenceScore,
-          'severity': _severity,
-          'priority': _priority,
-          'full_analysis': _fullAnalysis,
-          'primary_analysis': _primaryAnalysis,
-          'medical_inferences': _medicalInferences,
-          'proactive_recommendations': _proactiveRecommendations,
-        }),
-      );
+      await FirebaseFirestore.instance
+          .collection('digital_twin_analyses')
+          .doc(user.uid)
+          .collection('reports')
+          .add(doc);
 
-      if (response.statusCode == 200) {
-        _showSnackBar('Analysis saved to your Digital Twin memory',
-            isError: false);
-      } else {
-        throw Exception('Save failed');
-      }
+      _showSnackBar('Analysis saved to your Digital Twin memory',
+          isError: false);
     } catch (e) {
       _showSnackBar('Failed to save: $e', isError: true);
     }
@@ -218,6 +224,61 @@ class _DigitalTwinScreenRedesignedState
         behavior: SnackBarBehavior.floating,
       ),
     );
+  }
+
+  // Lightweight parser to structure Gemini free text into UI sections
+  Map<String, dynamic> _parseGeminiText(String text) {
+    String lower = text.toLowerCase();
+
+    int confidence = 75;
+    final percent = RegExp(r"(\d{1,3})%\s*confidence|confidence\s*(\d{1,3})%|")
+        .firstMatch(lower);
+    if (percent != null) {
+      final grp = percent.group(1) ?? percent.group(2);
+      if (grp != null) {
+        confidence = int.tryParse(grp) ?? confidence;
+      }
+    }
+
+    String severity = 'Moderate';
+    if (lower.contains('critical'))
+      severity = 'Critical';
+    else if (lower.contains('concerning') || lower.contains('worry'))
+      severity = 'Concerning';
+    else if (lower.contains('excellent') || lower.contains('optimal'))
+      severity = 'Excellent';
+    else if (lower.contains('good') || lower.contains('normal'))
+      severity = 'Good';
+
+    String priority = 'Medium';
+    if (lower.contains('urgent') || lower.contains('immediate'))
+      priority = 'Urgent';
+    else if (lower.contains('high priority') || lower.contains('soon'))
+      priority = 'High';
+    else if (lower.contains('low priority') || lower.contains('routine'))
+      priority = 'Low';
+
+    String extractBetween(String start, String end) {
+      final sIdx = text.indexOf(start);
+      if (sIdx == -1) return '';
+      final eIdx = end.isEmpty ? -1 : text.indexOf(end, sIdx + start.length);
+      if (eIdx == -1) return text.substring(sIdx).trim();
+      return text.substring(sIdx, eIdx).trim();
+    }
+
+    final primary = extractBetween('PRIMARY ANALYSIS', 'CONFIDENCE');
+    final inferences = extractBetween('MEDICAL INFERENCES', 'PROACTIVE');
+    final proactive = extractBetween('PROACTIVE RECOMMENDATIONS', 'SEVERITY');
+
+    return {
+      'confidence_score': confidence,
+      'severity': severity,
+      'priority': priority,
+      'primary_analysis': primary.isNotEmpty ? primary : text,
+      'medical_inferences': inferences,
+      'proactive_recommendations': proactive,
+      'full_analysis': text,
+    };
   }
 
   @override
